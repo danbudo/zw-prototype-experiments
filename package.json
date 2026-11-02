@@ -1,0 +1,8 @@
+{
+  "name": "zw-prototype-experiments",
+  "private": true,
+  "scripts": {
+    "start": "npm --prefix clldr start",
+    "test": "npm --prefix clldr test"
+  }
+}

@@ -1,0 +1,456 @@
+import { defaults, sanitize } from "./dsp.js";
+import { presets } from "./presets.js";
+import { estimatePitch, pitchLabel } from "./analysis.js";
+const $ = (s) => document.querySelector(s);
+let config = structuredClone(presets.pure),
+  ctx,
+  node,
+  analyser,
+  master,
+  held = false,
+  active = "a",
+  slots = { a: structuredClone(config), b: structuredClone(config) },
+  lock = 0,
+  timer,
+  lastAnalysis = 0;
+const controls = [];
+function message(s) {
+  $("#message").textContent = s;
+}
+function send(type, value) {
+  node?.port.postMessage({ type, value });
+}
+function changed() {
+  config = sanitize(config);
+  send("config", config);
+  slots[active] = structuredClone(config);
+  document
+    .querySelectorAll("#presets button")
+    .forEach((b) => b.classList.remove("selected"));
+}
+function slider(
+  parent,
+  key,
+  label,
+  min,
+  max,
+  step,
+  unit = "",
+  osc = null,
+  divider = false,
+) {
+  const el = document.createElement("div");
+  el.className = "control" + (divider ? " divider" : "");
+  const id = (osc ? osc + "-" : "") + key;
+  el.innerHTML = `<label for="${id}">${label}</label><input id="${id}" type="range" min="${min}" max="${max}" step="${step}"><output for="${id}"></output>`;
+  const input = el.querySelector("input"),
+    output = el.querySelector("output");
+  const format = (v) =>
+    `${Number(v).toFixed(step < 0.01 ? 3 : step < 1 ? 2 : 0)}${unit}`;
+  input.oninput = () => {
+    (osc ? config[osc] : config)[key] = Number(input.value);
+    output.textContent = format(input.value);
+    changed();
+  };
+  controls.push(() => {
+    input.value = (osc ? config[osc] : config)[key];
+    output.textContent = format(input.value);
+  });
+  $(parent).append(el);
+}
+for (const id of ["a", "b"]) {
+  const parent = "#osc-" + id;
+  $(parent).innerHTML =
+    `<p class="eyebrow">${id === "a" ? "01" : "03"} / SOURCE ${id.toUpperCase()}</p><h2>Oscillator ${id.toUpperCase()}<span>INDEPENDENT VOICE</span></h2><select id="${id}-wave" aria-label="Oscillator ${id.toUpperCase()} waveform"><option value="sine">Sine / sinusoidal</option><option value="triangle">Triangle / folded slope</option><option value="saw">Saw / ramp</option><option value="square">Square / pulse</option></select>`;
+  $("#" + id + "-wave").onchange = (e) => {
+    config[id].wave = e.target.value;
+    changed();
+  };
+  controls.push(() => ($("#" + id + "-wave").value = config[id].wave));
+  for (const args of [
+    ["ratio", "Ratio", 0.125, 8, 0.001, "×"],
+    ["detune", "Detune", -100, 100, 1, " ct"],
+    ["offset", "Freq. offset", -1000, 1000, 1, " Hz"],
+    ["tracking", "Key tracking", 0, 1, 0.01, ""],
+    ["phase", "Phase", 0, 360, 1, "°"],
+    ["shape", "Shape / duty", -0.85, 0.85, 0.01, ""],
+    ["dc", "DC bias", -0.8, 0.8, 0.01, ""],
+    ["sweep", "Pitch sweep", -48, 48, 0.1, " st"],
+    ["sweepTime", "Sweep decay", 0.005, 4, 0.005, " s"],
+  ])
+    slider(parent, ...args, id, args[0] === "sweep");
+}
+for (const a of [
+  ["fm", "Mutual FM", 0, 1000, 1, " Hz"],
+  ["feedback", "Feedback", 0, 0.94, 0.01, ""],
+])
+  slider("#coupling", ...a);
+for (const a of [
+  ["attack", "Attack", 0.002, 3, 0.002, " s"],
+  ["decay", "Decay", 0.01, 5, 0.01, " s"],
+  ["sustain", "Sustain", 0, 1, 0.01, ""],
+  ["release", "Release", 0.01, 8, 0.01, " s"],
+])
+  slider("#envelope", ...a);
+for (const a of [
+  ["grit", "Drive + drift", 0, 1, 0.01, ""],
+  ["asymmetry", "Asymmetry", -0.8, 0.8, 0.01, ""],
+  ["leak", "Source leakage", 0, 0.3, 0.01, ""],
+  ["noise", "Noise floor", 0, 0.15, 0.001, ""],
+])
+  slider("#circuit", ...a);
+for (let note = 24; note <= 96; note++) {
+  const opt = document.createElement("option");
+  opt.value = note;
+  opt.textContent = pitchLabel(440 * 2 ** ((note - 69) / 12)).name;
+  $("#note").append(opt);
+}
+function resetLock() {
+  lock = 0;
+  send("lock", 0);
+  $("#lock-status").textContent =
+    "Targets the root note · correction limited to ±200 ct";
+}
+function refresh() {
+  controls.forEach((f) => f());
+  for (const k of ["note", "tune", "volume"]) $("#" + k).value = config[k];
+  for (const k of ["drone", "sync"]) $("#" + k).checked = config[k];
+  $("#tune-value").textContent = config.tune + " ct";
+  $("#volume-value").textContent = Math.round(config.volume * 100) + "%";
+  document
+    .querySelectorAll("[data-mode]")
+    .forEach((b) =>
+      b.classList.toggle("selected", b.dataset.mode === config.mode),
+    );
+}
+function apply(p, preserveGate = false) {
+  const wasDrone = config.drone,
+    wasHeld = held;
+  config = sanitize(p);
+  if (!preserveGate) held = false;
+  clearTimeout(timer);
+  $("#hold").setAttribute("aria-pressed", String(held));
+  resetLock();
+  refresh();
+  send("config", config);
+  if (!config.drone && ((wasDrone && !held) || (wasHeld && !preserveGate)))
+    send("off");
+  slots[active] = structuredClone(config);
+}
+for (const name of Object.keys(presets)) {
+  const b = document.createElement("button");
+  b.textContent = name;
+  b.dataset.preset = name;
+  b.onclick = () => {
+    apply(presets[name]);
+    document
+      .querySelectorAll("#presets button")
+      .forEach((x) => x.classList.toggle("selected", x === b));
+    message(
+      name === "drone"
+        ? "Drone opens the gate. Disable Drone or press Stop to release."
+        : `${name[0].toUpperCase() + name.slice(1)} loaded. Strike to audition.`,
+    );
+  };
+  $("#presets").append(b);
+}
+for (const k of ["note", "tune", "volume"])
+  $("#" + k).oninput = (e) => {
+    config[k] = Number(e.target.value);
+    if (k !== "volume") resetLock();
+    changed();
+    refresh();
+  };
+for (const k of ["drone", "sync"])
+  $("#" + k).onchange = (e) => {
+    config[k] = e.target.checked;
+    changed();
+    if (k === "drone" && !config.drone && !held) send("off");
+  };
+document.querySelectorAll("[data-mode]").forEach(
+  (b) =>
+    (b.onclick = () => {
+      config.mode = b.dataset.mode;
+      changed();
+      resetLock();
+      refresh();
+    }),
+);
+async function enable() {
+  if (ctx) {
+    await ctx.resume();
+    return;
+  }
+  if (!window.isSecureContext || !window.AudioWorkletNode)
+    throw new Error(
+      "AudioWorklet needs HTTPS or localhost in a modern browser.",
+    );
+  ctx = new AudioContext({ latencyHint: "interactive" });
+  try {
+    await ctx.audioWorklet.addModule("./worklet.js");
+    node = new AudioWorkletNode(ctx, "clldr-engine", {
+      numberOfInputs: 0,
+      numberOfOutputs: 1,
+      outputChannelCount: [1],
+    });
+    analyser = ctx.createAnalyser();
+    analyser.fftSize = 8192;
+    analyser.smoothingTimeConstant = 0.65;
+    master = ctx.createGain();
+    master.gain.value = 1;
+    node.connect(master).connect(analyser).connect(ctx.destination);
+    node.onprocessorerror = () => {
+      message("Audio processor failed. Reload to restart.");
+      master.gain.setTargetAtTime(0, ctx.currentTime, 0.01);
+    };
+    send("config", config);
+    await ctx.resume();
+    $("#power").textContent = "Audio enabled ✓";
+    $("#engine-status").textContent =
+      `${Math.round(ctx.sampleRate / 1000)} kHz / 4× DSP`;
+    ctx.onstatechange = () => {
+      $("#power").textContent =
+        ctx.state === "running" ? "Audio enabled ✓" : "Resume audio ↗";
+    };
+    message(
+      "Audio ready. Strike, Hold, or play Space. Start with a low listening volume.",
+    );
+  } catch (e) {
+    await ctx.close();
+    ctx = null;
+    throw e;
+  }
+}
+async function safely(fn) {
+  try {
+    await enable();
+    fn?.();
+  } catch (e) {
+    message(e.message);
+  }
+}
+$("#power").onclick = () => safely();
+$("#trigger").onclick = () =>
+  safely(() => {
+    clearTimeout(timer);
+    send("on");
+    if (!held && !config.drone) timer = setTimeout(() => send("off"), 180);
+  });
+$("#hold").onclick = () =>
+  safely(() => {
+    held = !held;
+    clearTimeout(timer);
+    $("#hold").setAttribute("aria-pressed", String(held));
+    send(held ? "on" : "off");
+  });
+$("#stop").onclick = () => {
+  clearTimeout(timer);
+  held = false;
+  config.drone = false;
+  $("#hold").setAttribute("aria-pressed", "false");
+  changed();
+  refresh();
+  send("off");
+  resetLock();
+  message("Gate released. Envelope tail continues.");
+};
+let space = false;
+document.addEventListener("keydown", (e) => {
+  if (
+    e.code !== "Space" ||
+    e.repeat ||
+    /INPUT|SELECT|BUTTON|TEXTAREA/.test(e.target.tagName)
+  )
+    return;
+  e.preventDefault();
+  space = true;
+  safely(() => {
+    if (space) send("on");
+  });
+});
+document.addEventListener("keyup", (e) => {
+  if (e.code === "Space" && space) {
+    e.preventDefault();
+    space = false;
+    if (!held) send("off");
+  }
+});
+window.addEventListener("blur", () => {
+  space = false;
+  if (!held) send("off");
+});
+for (const id of ["a", "b"])
+  $("#slot-" + id).onclick = () => {
+    if (active === id) return;
+    slots[active] = structuredClone(config);
+    active = id;
+    apply(slots[id], true);
+    for (const k of ["a", "b"])
+      $("#slot-" + k).setAttribute("aria-pressed", String(k === active));
+    $("#store").textContent = `Store current → ${active === "a" ? "B" : "A"}`;
+    $("#slot-status").textContent =
+      `Listening to ${active.toUpperCase()}. Root, mode and all sound settings recalled.`;
+  };
+$("#store").onclick = () => {
+  const other = active === "a" ? "b" : "a";
+  slots[other] = structuredClone(config);
+  $("#slot-status").textContent =
+    `Current sound stored in ${other.toUpperCase()}. Change this sound, then switch to compare.`;
+};
+$("#save").onclick = () => {
+  const blob = new Blob(
+    [JSON.stringify({ format: "clldr", version: 1, config }, null, 2)],
+    { type: "application/json" },
+  );
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = "clldr-configuration.json";
+  a.click();
+  setTimeout(() => URL.revokeObjectURL(url), 1000);
+  message(
+    "Current configuration exported. A/B slots and playback state are not included.",
+  );
+};
+$("#load").onclick = () => $("#file").click();
+$("#file").onchange = async (e) => {
+  try {
+    const file = e.target.files[0];
+    if (!file) return;
+    if (file.size > 100000) throw new Error("Configuration file is too large.");
+    const data = JSON.parse(await file.text());
+    if (
+      data.format !== "clldr" ||
+      data.version !== 1 ||
+      !data.config ||
+      typeof data.config !== "object" ||
+      Array.isArray(data.config)
+    )
+      throw new Error("Expected a CLLDR version 1 configuration.");
+    apply(data.config);
+    message(
+      "Configuration imported. Unsupported values are ignored; numeric values are bounded.",
+    );
+  } catch (err) {
+    message("Import failed: " + err.message);
+  } finally {
+    e.target.value = "";
+  }
+};
+$("#pitch-lock").onchange = resetLock;
+refresh();
+document.querySelector('[data-preset="pure"]').classList.add("selected");
+const time = new Float32Array(8192),
+  freq = new Float32Array(4096);
+let pitch = null;
+function draw(canvas, kind) {
+  const ratio = devicePixelRatio || 1,
+    w = Math.round(canvas.clientWidth * ratio),
+    h = Math.round(canvas.clientHeight * ratio);
+  if (canvas.width !== w || canvas.height !== h) {
+    canvas.width = w;
+    canvas.height = h;
+  }
+  const c = canvas.getContext("2d");
+  c.clearRect(0, 0, w, h);
+  c.strokeStyle = "#2b352a";
+  c.lineWidth = ratio;
+  for (let i = 1; i < 4; i++) {
+    c.beginPath();
+    c.moveTo(0, (h * i) / 4);
+    c.lineTo(w, (h * i) / 4);
+    c.stroke();
+  }
+  for (let i = 1; i < 6; i++) {
+    c.beginPath();
+    c.moveTo((w * i) / 6, 0);
+    c.lineTo((w * i) / 6, h);
+    c.stroke();
+  }
+  c.strokeStyle = kind === "scope" ? "#c8ed83" : "#edaf76";
+  c.lineWidth = 1.3 * ratio;
+  c.beginPath();
+  if (kind === "scope") {
+    let start = 0;
+    if (analyser)
+      for (let i = 0; i < 2000; i++) {
+        if (time[i] < 0 && time[i + 1] >= 0) {
+          start = i;
+          break;
+        }
+      }
+    const count = ctx ? Math.round(ctx.sampleRate * 0.025) : 1200;
+    for (let x = 0; x < w; x++) {
+      const y = h * (0.5 - time[start + Math.floor((x / w) * count)] * 0.55);
+      x ? c.lineTo(x, y) : c.moveTo(x, y);
+    }
+  } else {
+    for (let x = 0; x < w; x++) {
+      const hz = 30 * (20000 / 30) ** (x / w),
+        bin = ctx
+          ? Math.min(4095, Math.round((hz / ctx.sampleRate) * 8192))
+          : 0;
+      const db = analyser ? freq[bin] : -100;
+      const y = h * (1 - Math.max(0, Math.min(1, (db + 100) / 100)));
+      x ? c.lineTo(x, y) : c.moveTo(x, y);
+    }
+  }
+  c.stroke();
+}
+function frame(now) {
+  requestAnimationFrame(frame);
+  if (document.hidden) return;
+  if (analyser) {
+    analyser.getFloatTimeDomainData(time);
+    analyser.getFloatFrequencyData(freq);
+    if (now - lastAnalysis > 180) {
+      lastAnalysis = now;
+      let peak = 0,
+        rms = 0;
+      for (const v of time) {
+        peak = Math.max(peak, Math.abs(v));
+        rms += v * v;
+      }
+      rms = Math.sqrt(rms / time.length);
+      const db = (v) => (v > 1e-7 ? (20 * Math.log10(v)).toFixed(1) : "−∞");
+      $("#rms").textContent = db(rms);
+      $("#peak").textContent = db(peak);
+      pitch = estimatePitch(time, ctx.sampleRate);
+      if (pitch) {
+        const info = pitchLabel(pitch.hz);
+        $("#pitch-note").textContent = info.name;
+        $("#pitch-cents").textContent =
+          (info.cents >= 0 ? "+" : "") + info.cents.toFixed(1) + " ct";
+        $("#pitch-hz").textContent =
+          pitch.hz.toFixed(2) + " Hz · detected final-output periodicity";
+        $("#confidence").textContent =
+          Math.round(pitch.confidence * 100) + "% CONF.";
+        $("#needle").style.left =
+          50 + Math.max(-50, Math.min(50, info.cents)) + "%";
+        if ($("#pitch-lock").checked) {
+          const target =
+              440 * 2 ** ((config.note - 69) / 12 + config.tune / 1200),
+            error = 1200 * Math.log2(target / pitch.hz);
+          if (pitch.confidence > 0.92 && Math.abs(error) < 350) {
+            lock = Math.max(-200, Math.min(200, lock + error * 0.08));
+            send("lock", lock);
+            $("#lock-status").textContent =
+              `Correction ${lock.toFixed(1)} ct / ±200 ct · experimental`;
+          } else
+            $("#lock-status").textContent =
+              "Lock waiting: low confidence or target out of range";
+        }
+      } else {
+        $("#pitch-note").textContent = "—";
+        $("#pitch-cents").textContent = "— ct";
+        $("#confidence").textContent = rms > 0.003 ? "AMBIGUOUS" : "NO SIGNAL";
+        $("#pitch-hz").textContent = "No stable periodicity detected";
+        if ($("#pitch-lock").checked)
+          $("#lock-status").textContent = "Lock waiting for a stable signal";
+      }
+    }
+  }
+  draw($("#scope"), "scope");
+  draw($("#spectrum"), "spectrum");
+}
+requestAnimationFrame(frame);

@@ -1,0 +1,204 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width,initial-scale=1" />
+    <meta name="theme-color" content="#151815" />
+    <link
+      rel="icon"
+      href="data:image/svg+xml,%3Csvg xmlns=%27http://www.w3.org/2000/svg%27 viewBox=%270 0 32 32%27%3E%3Crect width=%2732%27 height=%2732%27 rx=%276%27 fill=%27%23c8ed83%27/%3E%3Ctext x=%277%27 y=%2724%27 font-size=%2724%27%3EC%3C/text%3E%3C/svg%3E"
+    />
+    <title>CLLDR · Sound laboratory</title>
+    <link rel="stylesheet" href="style.css" />
+  </head>
+  <body>
+    <header>
+      <a class="brand" href="./">ZERO WIDTH<span>EXPERIMENTS / 001</span></a>
+      <div class="header-right">
+        <span id="engine-status" role="status">ENGINE OFFLINE</span
+        ><button id="power" class="accent">Enable audio ↗</button>
+      </div>
+    </header>
+    <main>
+      <section class="intro">
+        <div>
+          <p class="eyebrow">TWO SIGNALS. ONE COLLISION.</p>
+          <h1>CLLDR<span>Sound engine laboratory</span></h1>
+        </div>
+        <p class="intro-copy">
+          An instrument built at the point of interaction.<br />Multiply,
+          switch, or collide. Follow the sidebands.
+        </p>
+      </section>
+      <section class="transport panel">
+        <div class="transport-top">
+          <div
+            class="preset-list"
+            id="presets"
+            aria-label="Test configurations"
+          ></div>
+          <div class="file-actions">
+            <button id="save">Export JSON ↓</button
+            ><button id="load">Import JSON ↑</button
+            ><input
+              id="file"
+              type="file"
+              accept="application/json,.json"
+              hidden
+            />
+          </div>
+        </div>
+        <div class="transport-bottom">
+          <label class="note-label"
+            >ROOT NOTE<select id="note" aria-label="Root note"></select></label
+          ><button id="trigger" class="accent">↯ Strike</button
+          ><button id="hold" aria-pressed="false">Hold</button
+          ><label class="check"><input id="drone" type="checkbox" />Drone</label
+          ><label class="tune"
+            >MASTER TUNE
+            <input
+              id="tune"
+              type="range"
+              min="-100"
+              max="100"
+              step="1"
+            /><output id="tune-value">0 ct</output></label
+          ><label class="tune"
+            >OUTPUT
+            <input
+              id="volume"
+              type="range"
+              min="0"
+              max="0.85"
+              step="0.01" /><output id="volume-value"></output></label
+          ><button id="stop" class="danger">■ Stop</button>
+        </div>
+        <p id="message" role="status">
+          Enable audio, then strike a note. Space to play · hold for a sustained
+          gate.
+        </p>
+      </section>
+      <section class="engine-grid">
+        <div id="osc-a" class="panel oscillator"></div>
+        <div class="interaction panel">
+          <p class="eyebrow">02 / INTERACTION</p>
+          <h2>The collision</h2>
+          <div class="modes" role="group" aria-label="Interaction mode">
+            <button data-mode="multiply">
+              <strong>A × B</strong><span>Ideal multiplication</span></button
+            ><button data-mode="switch">
+              <strong>A × sign(B)</strong
+              ><span>Polarity switching</span></button
+            ><button data-mode="xor">
+              <strong>A ⊕ B</strong><span>Sign-bit XOR logic</span>
+            </button>
+          </div>
+          <div id="coupling"></div>
+          <label class="check sync"
+            ><input id="sync" type="checkbox" />Hard sync B to A</label
+          >
+          <p class="small">
+            A → interaction ← B<br />4× oversampling → DC block → envelope →
+            soft ceiling
+          </p>
+        </div>
+        <div id="osc-b" class="panel oscillator"></div>
+      </section>
+      <section class="lower-grid">
+        <div class="panel">
+          <p class="eyebrow">04 / ARTICULATION</p>
+          <h2>Amplitude envelope</h2>
+          <div id="envelope"></div>
+          <p class="small">
+            Strike retriggers phase and pitch sweeps. Hold sustains the gate;
+            Drone keeps it open.
+          </p>
+        </div>
+        <div class="panel">
+          <p class="eyebrow">05 / NON-IDEAL BEHAVIOUR</p>
+          <h2>Circuit imperfections</h2>
+          <div id="circuit"></div>
+          <p class="small">
+            A deliberately abstract circuit model. Feedback is delayed,
+            saturated and bounded.
+          </p>
+        </div>
+        <div class="panel comparison">
+          <p class="eyebrow">06 / COMPARE</p>
+          <h2>Keep a reference</h2>
+          <div class="slots">
+            <button id="slot-a" aria-pressed="true">Listen A</button
+            ><button id="slot-b" aria-pressed="false">Listen B</button>
+          </div>
+          <button id="store">Store current → B</button>
+          <p id="slot-status" class="small">
+            A and B start with the Pure configuration.
+          </p>
+          <p class="small">
+            Slots store the complete configuration. Switching preserves the
+            current gate; phase and envelopes continue.
+          </p>
+        </div>
+      </section>
+      <section class="monitor-grid">
+        <div class="panel scope">
+          <div class="panel-heading">
+            <div>
+              <p class="eyebrow">07 / FINAL OUTPUT</p>
+              <h2>Oscilloscope</h2>
+            </div>
+            <span class="tag">TIME DOMAIN</span>
+          </div>
+          <canvas id="scope" aria-label="Final output waveform"></canvas>
+        </div>
+        <div class="panel spectrum">
+          <div class="panel-heading">
+            <h2>Spectrum</h2>
+            <span class="tag">30 Hz — 20 kHz · LOG</span>
+          </div>
+          <canvas
+            id="spectrum"
+            aria-label="Final output frequency spectrum"
+          ></canvas>
+        </div>
+        <div class="panel tuner">
+          <p class="eyebrow">08 / LISTENING BACK</p>
+          <div class="tuner-title">
+            <h2>Output tuner</h2>
+            <span id="confidence">NO SIGNAL</span>
+          </div>
+          <div class="pitch">
+            <strong id="pitch-note">—</strong><span id="pitch-cents">— ct</span>
+          </div>
+          <div class="cents-scale"><i id="needle"></i></div>
+          <div class="scale-labels">
+            <span>−50</span><span>0</span><span>+50 ct</span>
+          </div>
+          <p id="pitch-hz" class="small">
+            Waiting for a stable periodic signal
+          </p>
+          <label class="check"
+            ><input id="pitch-lock" type="checkbox" />Experimental pitch
+            lock</label
+          >
+          <p id="lock-status" class="small">
+            Targets the root note · correction limited to ±200 ct
+          </p>
+          <div class="level">
+            <span>RMS <b id="rms">−∞</b> dBFS</span
+            ><span>PEAK <b id="peak">−∞</b> dBFS</span>
+          </div>
+        </div>
+      </section>
+      <footer>
+        <span>CLLDR / DISPOSABLE SOUND LABORATORY</span>
+        <p>
+          Start quietly. XOR and sync create dense harmonics. Tuning may be
+          ambiguous for inharmonic or noisy sounds. This is an exploratory
+          model, not a circuit emulation.
+        </p>
+      </footer>
+    </main>
+    <script type="module" src="app.js"></script>
+  </body>
+</html>
