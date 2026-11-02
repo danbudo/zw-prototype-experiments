@@ -20,7 +20,16 @@ export const defaults = {
   sustain: 0.65,
   release: 0.7,
   drone: false,
+  // fm remains the 0..1000 fader position for backwards-compatible v1 patches.
   fm: 0,
+  coupling: "original",
+  curve: 1,
+  hzRange: 1000,
+  relativeRange: 2,
+  phaseRange: 1,
+  trim: 0,
+  auditionRate: 2,
+  auditionSequence: false,
   sync: false,
   feedback: 0,
   grit: 0,
@@ -41,6 +50,12 @@ export function sanitize(input = {}) {
     sustain: [0, 1],
     release: [0.01, 8],
     fm: [0, 1000],
+    curve: [0.25, 4],
+    hzRange: [0, 4000],
+    relativeRange: [0, 8],
+    phaseRange: [0, 4],
+    trim: [-24, 0],
+    auditionRate: [0.25, 8],
     feedback: [0, 0.94],
     grit: [0, 1],
     asymmetry: [-0.8, 0.8],
@@ -51,7 +66,9 @@ export function sanitize(input = {}) {
     if (typeof input[k] === "number" && Number.isFinite(input[k]))
       p[k] = Math.max(lo, Math.min(hi, input[k]));
   if (["multiply", "switch", "xor"].includes(input.mode)) p.mode = input.mode;
-  for (const k of ["drone", "sync"])
+  if (["original", "normalised", "pm"].includes(input.coupling))
+    p.coupling = input.coupling;
+  for (const k of ["drone", "sync", "auditionSequence"])
     if (typeof input[k] === "boolean") p[k] = input[k];
   for (const id of ["a", "b"]) {
     const o = input[id] || {};
@@ -72,6 +89,18 @@ export function sanitize(input = {}) {
         p[id][k] = Math.max(lo, Math.min(hi, o[k]));
   }
   return p;
+}
+export function couplingDepth(p) {
+  // Preserve arbitrary legacy Hz values without a divide/multiply round trip.
+  if (p.coupling === "original" && p.curve === 1 && p.hzRange === 1000)
+    return p.fm;
+  const range =
+    p.coupling === "original"
+      ? p.hzRange
+      : p.coupling === "normalised"
+        ? p.relativeRange
+        : p.phaseRange;
+  return (p.fm / 1000) ** p.curve * range;
 }
 export function interact(a, b, mode) {
   return mode === "switch"
@@ -117,6 +146,16 @@ export class Engine {
     this.ph = [0, 0];
     this.last = new Float64Array(2);
     this.values = new Float64Array(2);
+    this.targets = new Float64Array(2);
+    this.carrierHz = new Float64Array(2);
+    this.readHz = new Float64Array(2);
+    this.readPhase = new Float64Array(2);
+    this.previousPM = new Float64Array(2);
+    this.previousPhaseControl = new Float64Array(2);
+    this.noteOffset = 0;
+    this.depth = 0;
+    this.trimGain = 1;
+    this.telemetry = null;
     this.env = 0;
     this.stage = "off";
     this.age = 0;
@@ -141,7 +180,26 @@ export class Engine {
   }
   configure(p) {
     this.p = sanitize(p);
+    this.depth = couplingDepth(this.p);
+    this.trimGain = 10 ** (this.p.trim / 20);
     if (this.p.drone && this.stage === "off") this.trigger();
+  }
+  // Clean listening trigger; legacy trigger intentionally retains its original behaviour.
+  reset() {
+    this.ph[0] = this.ph[1] = 0;
+    this.last.fill(0);
+    this.values.fill(0);
+    this.previousPM.fill(0);
+    this.previousPhaseControl.fill(0);
+    this.env = 0;
+    this.stage = "off";
+    this.age = 0;
+    this.feedback = 0;
+    this.seed = 12345;
+    this.ring.fill(0);
+    this.pos = 0;
+    this.dcIn = 0;
+    this.dcOut = 0;
   }
   trigger() {
     this.ph = [0, 0];
@@ -178,7 +236,11 @@ export class Engine {
       );
       if (this.env === 0) this.stage = "off";
     }
-    const base = 440 * 2 ** ((p.note - 69) / 12 + (p.tune + this.lock) / 1200);
+    const base =
+      440 *
+      2 **
+        ((Math.max(24, Math.min(96, p.note + this.noteOffset)) - 69) / 12 +
+          (p.tune + this.lock) / 1200);
     for (let j = 0; j < 4; j++) {
       const values = this.values;
       for (let i = 0; i < 2; i++) {
@@ -187,13 +249,25 @@ export class Engine {
         const sweep = o.sweep * Math.exp(-this.age / o.sweepTime);
         const drift =
           p.grit * 0.003 * Math.sin(this.age * (i ? 1.17 : 0.83) * 6.28);
+        const target =
+          tracked * o.ratio * 2 ** (o.detune / 1200 + sweep / 12 + drift) +
+          o.offset;
+        this.targets[i] = target;
+        // Previous oversample is frozen for BOTH directions: no evaluation-order shortcut.
+        const modulation =
+          p.coupling === "original"
+            ? this.depth * this.last[1 - i]
+            : p.coupling === "normalised"
+              ? this.depth *
+                Math.max(0, Math.min(this.rate * 0.42, target)) *
+                this.last[1 - i]
+              : 0;
         const hz = Math.max(
           0,
           Math.min(
             this.rate * 0.42,
-            tracked * o.ratio * 2 ** (o.detune / 1200 + sweep / 12 + drift) +
-              o.offset +
-              p.fm * this.last[1 - i] +
+            target +
+              modulation +
               (i === 0 ? this.feedback * p.feedback * base * 2 : 0),
           ),
         );
@@ -201,21 +275,49 @@ export class Engine {
         this.ph[i] += dt;
         const wrapped = this.ph[i] >= 1;
         this.ph[i] %= 1;
-        if (i === 0 && wrapped && p.sync) this.ph[1] = 0;
-        values[i] = wave(
-          (this.ph[i] + o.phase / 360) % 1,
-          Math.max(dt, 1e-9),
-          o,
-        );
+        // Capture B's actual reset jump for the phase-velocity telemetry.
+        if (i === 0) this.syncJump = 0;
+        if (i === 0 && wrapped && p.sync) {
+          this.syncJump = -this.ph[1];
+          this.ph[1] = 0;
+        }
+        const pm = p.coupling === "pm" ? this.depth * this.last[1 - i] : 0;
+        const phase = o.phase / 360;
+        // Preserve original evaluation path exactly when PM is not selected.
+        const read =
+          p.coupling === "pm" && this.depth !== 0
+            ? (((this.ph[i] + phase + pm) % 1) + 1) % 1
+            : (this.ph[i] + phase) % 1;
+        const velocity =
+          hz +
+          (pm -
+            this.previousPM[i] +
+            phase -
+            this.previousPhaseControl[i] +
+            (i === 1 ? this.syncJump : 0)) *
+            this.sr;
+        this.carrierHz[i] = hz;
+        this.readHz[i] = velocity;
+        this.readPhase[i] = read;
+        this.previousPM[i] = pm;
+        this.previousPhaseControl[i] = phase;
+        // Approximate polyBLEP width for PM; arbitrary PM/sync jumps remain uncorrected.
+        const width =
+          p.coupling === "pm" && this.depth !== 0
+            ? Math.min(0.49, Math.max(1e-9, Math.abs(velocity) / this.sr))
+            : Math.max(dt, 1e-9);
+        values[i] = wave(read, width, o);
       }
       this.last.set(values);
       let v = interact(values[0], values[1], p.mode);
+      this.interaction = v;
       v +=
         p.asymmetry * v * v * 0.4 +
         p.leak * (values[0] + values[1]) +
         p.noise * this.random();
       if (p.grit > 0) v = Math.tanh(v * (1 + 3 * p.grit)) / (1 + p.grit);
       this.feedback = Math.tanh(v + this.feedback * p.feedback * 0.3);
+      this.loopInput = v;
       this.ring[this.pos] = v;
       this.pos = (this.pos + 1) % 63;
       this.age += 1 / this.sr;
@@ -227,6 +329,7 @@ export class Engine {
     const dc = out - (this.dcIn || 0) + 0.995 * (this.dcOut || 0);
     this.dcIn = out;
     this.dcOut = dc;
-    return 0.8 * Math.tanh(dc * this.env * p.volume);
+    if (this.telemetry) this.telemetry.push(this);
+    return 0.8 * Math.tanh(dc * this.env * p.volume) * this.trimGain;
   }
 }

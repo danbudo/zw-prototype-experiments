@@ -6,6 +6,8 @@ Independent, disposable sound laboratories for exploring Zero Width instruments.
 
 [CLLDR](clldr/README.md) is a standalone browser instrument built around two interacting oscillators: ideal multiplication, polarity switching and sign-bit XOR. It includes independent pitch sweeps, mutual FM, hard sync, bounded feedback, circuit imperfections, envelopes, live analysis, experimental pitch lock, A/B snapshots and six test configurations.
 
+The [Collision listening experiment](clldr/EXPERIMENT.md) compares Original FM, frequency-relative FM and causal reciprocal PM with controlled playback and actual source telemetry.
+
 No dependency installation or build is needed. From the repository root:
 
 ```sh

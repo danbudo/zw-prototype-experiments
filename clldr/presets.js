@@ -7,6 +7,7 @@ const preset = (v) =>
     b: { ...defaults.b, ...v.b },
   });
 export const presets = {
+  initialise: preset({}),
   pure: preset({
     note: 57,
     mode: "multiply",

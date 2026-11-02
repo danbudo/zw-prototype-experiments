@@ -1,6 +1,7 @@
-import { defaults, sanitize } from "./dsp.js";
+import { defaults, sanitize, couplingDepth } from "./dsp.js";
 import { presets } from "./presets.js";
 import { estimatePitch, pitchLabel } from "./analysis.js";
+import { CollisionView } from "./collision-view.js";
 const $ = (s) => document.querySelector(s);
 let config = structuredClone(presets.pure),
   ctx,
@@ -14,6 +15,39 @@ let config = structuredClone(presets.pure),
   timer,
   lastAnalysis = 0;
 const controls = [];
+let auditioning = false,
+  latestRMS = 0,
+  referenceRMS = 0;
+const collisionView = new CollisionView(
+  $("#collision-scope"),
+  $("#telemetry-summary"),
+);
+function stopAudition() {
+  if (auditioning) send("audition", false);
+  auditioning = false;
+  $("#repeat").setAttribute("aria-pressed", "false");
+  $("#pitch-lock").disabled = false;
+}
+function refreshCoupling() {
+  $("#mechanism").value = config.coupling;
+  $("#collision").value = config.fm;
+  $("#collision-value").textContent = (config.fm / 10).toFixed(1) + "%";
+  const depth = couplingDepth(config),
+    unit =
+      config.coupling === "original"
+        ? "Hz"
+        : config.coupling === "normalised"
+          ? "× receiving target"
+          : "cycles";
+  $("#collision-depth").textContent =
+    `${depth.toFixed(3)} ${unit} · mutually exclusive source coupling`;
+  for (const key of ["hzRange", "relativeRange", "phaseRange"])
+    $("#" + key).closest(".control").hidden =
+      key !==
+      { original: "hzRange", normalised: "relativeRange", pm: "phaseRange" }[
+        config.coupling
+      ];
+}
 function message(s) {
   $("#message").textContent = s;
 }
@@ -51,6 +85,7 @@ function slider(
     (osc ? config[osc] : config)[key] = Number(input.value);
     output.textContent = format(input.value);
     changed();
+    refreshCoupling();
   };
   controls.push(() => {
     input.value = (osc ? config[osc] : config)[key];
@@ -80,11 +115,108 @@ for (const id of ["a", "b"]) {
   ])
     slider(parent, ...args, id, args[0] === "sweep");
 }
-for (const a of [
-  ["fm", "Mutual FM", 0, 1000, 1, " Hz"],
-  ["feedback", "Feedback", 0, 0.94, 0.01, ""],
-])
-  slider("#coupling", ...a);
+slider("#coupling", "feedback", "Result feedback", 0, 0.94, 0.01);
+slider("#scaling", "curve", "Curve exponent", 0.25, 4, 0.05);
+slider("#scaling", "hzRange", "FM range", 0, 4000, 1, " Hz");
+slider("#scaling", "relativeRange", "Relative range", 0, 8, 0.01, "×");
+slider("#scaling", "phaseRange", "PM range", 0, 4, 0.01, " cyc");
+slider("#repeat-rate", "auditionRate", "Notes / second", 0.25, 8, 0.05, " Hz");
+slider("#level-trim", "trim", "Listening trim", -24, 0, 0.1, " dB");
+$("#mechanism").onchange = (e) => {
+  config.coupling = e.target.value;
+  resetLock();
+  changed();
+  refreshCoupling();
+  message(
+    "Coupling mechanism changed; oscillator settings and Collision position preserved.",
+  );
+};
+$("#collision").oninput = (e) => {
+  config.fm = Number(e.target.value);
+  changed();
+  refreshCoupling();
+};
+$("#sequence").onchange = (e) => {
+  config.auditionSequence = e.target.checked;
+  changed();
+};
+$("#clean-trigger").onclick = () =>
+  safely(() => {
+    stopAudition();
+    clearTimeout(timer);
+    resetLock();
+    send("clean-on", { sustain: held || config.drone });
+  });
+$("#repeat").onclick = () =>
+  safely(() => {
+    if (auditioning) {
+      stopAudition();
+      return;
+    }
+    clearTimeout(timer);
+    held = false;
+    config.drone = false;
+    $("#hold").setAttribute("aria-pressed", "false");
+    $("#pitch-lock").checked = false;
+    resetLock();
+    changed();
+    refresh();
+    auditioning = true;
+    $("#repeat").setAttribute("aria-pressed", "true");
+    $("#pitch-lock").disabled = true;
+    send("audition", true);
+    message(
+      "Sample-clock repeat active. Each note resets DSP memory; pitch lock is disabled during repeat.",
+    );
+  });
+$("#capture-level").onclick = () => {
+  if (latestRMS < 0.003) {
+    message("Play a sustained sound before capturing a reference level.");
+    return;
+  }
+  referenceRMS = latestRMS;
+  $("#match-status").textContent =
+    `Reference ${(20 * Math.log10(referenceRMS)).toFixed(1)} dBFS RMS captured. Switch sound, then Match once.`;
+};
+$("#match-level").onclick = () => {
+  if (!referenceRMS || latestRMS < 0.003) {
+    message("Capture a reference, then play a sound with a measurable level.");
+    return;
+  }
+  const estimate = config.trim + 20 * Math.log10(referenceRMS / latestRMS);
+  config.trim = Math.max(-24, Math.min(0, estimate));
+  changed();
+  refresh();
+  $("#match-status").textContent =
+    estimate > 0
+      ? "Reference is louder than this sound. Trim only attenuates: capture the quieter sound, then match the louder sound to it."
+      : `One-shot estimate: ${config.trim.toFixed(1)} dB passive trim. Compare meters and ears; no ongoing correction.`;
+};
+$("#export-telemetry").onclick = () => {
+  const snapshot = collisionView.snapshot();
+  if (!snapshot) {
+    message("Enable audio before exporting telemetry.");
+    return;
+  }
+  const url = URL.createObjectURL(
+    new Blob(
+      [
+        JSON.stringify({
+          format: "clldr-telemetry",
+          version: 1,
+          config,
+          ...snapshot,
+        }),
+      ],
+      { type: "application/json" },
+    ),
+  );
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = "clldr-telemetry.json";
+  a.click();
+  setTimeout(() => URL.revokeObjectURL(url), 1000);
+};
 for (const a of [
   ["attack", "Attack", 0.002, 3, 0.002, " s"],
   ["decay", "Decay", 0.01, 5, 0.01, " s"],
@@ -112,6 +244,8 @@ function resetLock() {
     "Targets the root note · correction limited to ±200 ct";
 }
 function refresh() {
+  refreshCoupling();
+  $("#sequence").checked = config.auditionSequence;
   controls.forEach((f) => f());
   for (const k of ["note", "tune", "volume"]) $("#" + k).value = config[k];
   for (const k of ["drone", "sync"]) $("#" + k).checked = config[k];
@@ -124,9 +258,11 @@ function refresh() {
     );
 }
 function apply(p, preserveGate = false) {
+  if (!preserveGate) stopAudition();
   const wasDrone = config.drone,
     wasHeld = held;
   config = sanitize(p);
+  if (config.drone && auditioning) stopAudition();
   if (!preserveGate) held = false;
   clearTimeout(timer);
   $("#hold").setAttribute("aria-pressed", String(held));
@@ -143,6 +279,10 @@ for (const name of Object.keys(presets)) {
   b.dataset.preset = name;
   b.onclick = () => {
     apply(presets[name]);
+    if (name === "initialise") {
+      $("#pitch-lock").checked = false;
+      resetLock();
+    }
     document
       .querySelectorAll("#presets button")
       .forEach((x) => x.classList.toggle("selected", x === b));
@@ -163,6 +303,7 @@ for (const k of ["note", "tune", "volume"])
   };
 for (const k of ["drone", "sync"])
   $("#" + k).onchange = (e) => {
+    if (k === "drone" && e.target.checked) stopAudition();
     config[k] = e.target.checked;
     changed();
     if (k === "drone" && !config.drone && !held) send("off");
@@ -193,6 +334,10 @@ async function enable() {
       numberOfOutputs: 1,
       outputChannelCount: [1],
     });
+    node.port.onmessage = ({ data }) => {
+      if (data.type === "telemetry") collisionView.accept(data, node.port);
+    };
+    send("telemetry", true);
     analyser = ctx.createAnalyser();
     analyser.fftSize = 8192;
     analyser.smoothingTimeConstant = 0.65;
@@ -232,18 +377,21 @@ async function safely(fn) {
 $("#power").onclick = () => safely();
 $("#trigger").onclick = () =>
   safely(() => {
+    stopAudition();
     clearTimeout(timer);
     send("on");
     if (!held && !config.drone) timer = setTimeout(() => send("off"), 180);
   });
 $("#hold").onclick = () =>
   safely(() => {
+    stopAudition();
     held = !held;
     clearTimeout(timer);
     $("#hold").setAttribute("aria-pressed", String(held));
     send(held ? "on" : "off");
   });
 $("#stop").onclick = () => {
+  stopAudition();
   clearTimeout(timer);
   held = false;
   config.drone = false;
@@ -263,6 +411,7 @@ document.addEventListener("keydown", (e) => {
   )
     return;
   e.preventDefault();
+  stopAudition();
   space = true;
   safely(() => {
     if (space) send("on");
@@ -277,7 +426,7 @@ document.addEventListener("keyup", (e) => {
 });
 window.addEventListener("blur", () => {
   space = false;
-  if (!held) send("off");
+  if (!held && !auditioning) send("off");
 });
 for (const id of ["a", "b"])
   $("#slot-" + id).onclick = () => {
@@ -412,6 +561,7 @@ function frame(now) {
         rms += v * v;
       }
       rms = Math.sqrt(rms / time.length);
+      latestRMS = rms;
       const db = (v) => (v > 1e-7 ? (20 * Math.log10(v)).toFixed(1) : "−∞");
       $("#rms").textContent = db(rms);
       $("#peak").textContent = db(peak);
@@ -450,6 +600,7 @@ function frame(now) {
       }
     }
   }
+  collisionView.draw(config.fm / 1000);
   draw($("#scope"), "scope");
   draw($("#spectrum"), "spectrum");
 }

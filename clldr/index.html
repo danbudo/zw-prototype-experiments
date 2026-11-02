@@ -78,6 +78,24 @@
           gate.
         </p>
       </section>
+      <section class="panel listening">
+        <p class="eyebrow">CONTROLLED COUPLING EXPERIMENT</p>
+        <div class="listening-row">
+          <button id="clean-trigger">↯ Clean strike</button
+          ><button id="repeat" aria-pressed="false">Repeat notes</button
+          ><label class="check"
+            ><input id="sequence" type="checkbox" />Pitch sequence: root / +12 /
+            −12 / +7</label
+          >
+          <div id="repeat-rate"></div>
+        </div>
+        <p class="small">
+          Clean strike and repeated notes reset phases, envelope, feedback,
+          noise seed and filter memory. Repeat uses a 55% gate. Mechanism
+          changes leave oscillator settings untouched. Drone and Repeat are
+          exclusive.
+        </p>
+      </section>
       <section class="engine-grid">
         <div id="osc-a" class="panel oscillator"></div>
         <div class="interaction panel">
@@ -93,6 +111,35 @@
               <strong>A ⊕ B</strong><span>Sign-bit XOR logic</span>
             </button>
           </div>
+          <label class="mechanism-label" for="mechanism"
+            >COUPLING MECHANISM</label
+          >
+          <select id="mechanism">
+            <option value="original">Original FM · absolute Hz</option>
+            <option value="normalised">Normalised FM · relative depth</option>
+            <option value="pm">Mutual PM · cycles</option>
+          </select>
+          <div class="collision-control">
+            <label for="collision"
+              >Collision <output id="collision-value">0%</output></label
+            ><input
+              id="collision"
+              type="range"
+              min="0"
+              max="1000"
+              step="1"
+              value="0"
+            />
+            <p id="collision-depth" class="small"></p>
+          </div>
+          <details class="scaling">
+            <summary>Experimental range &amp; response</summary>
+            <div id="scaling"></div>
+            <p class="small">
+              Depth = range × Collision<sup>curve</sup>. Equal fader positions
+              do not imply equivalent sound or modulation across mechanisms.
+            </p>
+          </details>
           <div id="coupling"></div>
           <label class="check sync"
             ><input id="sync" type="checkbox" />Hard sync B to A</label
@@ -131,6 +178,15 @@
             ><button id="slot-b" aria-pressed="false">Listen B</button>
           </div>
           <button id="store">Store current → B</button>
+          <div id="level-trim"></div>
+          <div class="match-buttons">
+            <button id="capture-level">Capture reference level</button
+            ><button id="match-level">Match once</button>
+          </div>
+          <p id="match-status" class="small">
+            Manual trim / optional one-shot RMS estimate. No automatic gain
+            riding.
+          </p>
           <p id="slot-status" class="small">
             A and B start with the Pure configuration.
           </p>
@@ -139,6 +195,29 @@
             current gate; phase and envelopes continue.
           </p>
         </div>
+      </section>
+      <section class="panel collision-monitor">
+        <div class="panel-heading">
+          <div>
+            <p class="eyebrow">SYNCHRONISED SOURCE TELEMETRY</p>
+            <h2>Two sources, one interaction</h2>
+          </div>
+          <button id="export-telemetry">Export snapshot ↓</button>
+        </div>
+        <canvas
+          id="collision-scope"
+          aria-label="Synchronous oscillator A and B traces and interaction output"
+        ></canvas>
+        <p id="telemetry-summary" class="small">
+          Enable audio to receive oscillator telemetry.
+        </p>
+        <p class="small">
+          A = lime · B = amber · lower trace = raw interaction. Shared time
+          window; position follows Collision, waveform shape comes only from
+          actual signals. Sources are before the amplitude envelope, so movement
+          can continue while output is silent. No independent trace triggering
+          or fabricated agitation.
+        </p>
       </section>
       <section class="monitor-grid">
         <div class="panel scope">

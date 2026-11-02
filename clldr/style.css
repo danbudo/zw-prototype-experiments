@@ -534,3 +534,95 @@ footer p {
     padding: 8px 10px;
   }
 }
+/* Listening experiment: local additions to the existing laboratory. */
+.listening {
+  margin-bottom: 18px;
+}
+.listening-row {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  flex-wrap: wrap;
+}
+.listening .small {
+  margin-top: 12px;
+}
+.listening #repeat-rate {
+  min-width: 260px;
+}
+.mechanism-label {
+  display: block;
+  font: 10px monospace;
+  letter-spacing: 1px;
+  color: var(--muted);
+  margin-bottom: 9px;
+}
+#mechanism {
+  width: 100%;
+  font-size: 12px;
+}
+.collision-control {
+  padding: 20px 0;
+}
+.collision-control label {
+  display: flex;
+  justify-content: space-between;
+  font-size: 20px;
+  color: var(--lime);
+  margin-bottom: 12px;
+}
+.collision-control input {
+  height: 28px;
+}
+.collision-control .small {
+  margin-top: 8px;
+}
+.scaling {
+  border-block: 1px solid var(--line);
+  padding: 12px 0;
+  margin-bottom: 14px;
+}
+.scaling summary {
+  font-size: 11px;
+  cursor: pointer;
+  color: var(--muted);
+}
+.scaling .control {
+  grid-template-columns: 90px 1fr 62px;
+}
+.control[hidden] {
+  display: none;
+}
+.collision-monitor {
+  margin-top: 18px;
+}
+.collision-monitor canvas {
+  height: 260px;
+}
+.collision-monitor .small {
+  margin-top: 10px;
+}
+.match-buttons {
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+  margin-top: 10px;
+}
+.match-buttons button {
+  font-size: 10px;
+}
+.tune input[type="range"] {
+  width: 85px;
+}
+@media (max-width: 620px) {
+  .collision-monitor .panel-heading {
+    display: block;
+  }
+  .collision-monitor button {
+    margin-bottom: 14px;
+  }
+  .listening #repeat-rate {
+    min-width: 0;
+    width: 100%;
+  }
+}

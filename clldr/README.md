@@ -2,6 +2,12 @@
 
 A disposable, standalone browser sound laboratory for Zero Width. Two oscillators generate sound through multiplication, polarity switching, or sign-bit XOR. There is no conventional synth voice feeding a ring-modulation effect.
 
+## Collision listening experiment
+
+The laboratory now includes exclusive **Original FM**, **Normalised FM** and **Mutual PM**, one Collision fader, adjustable depth ranges/curve, an Initialise configuration, deterministic sample-clock repeat/sequence, passive level matching and live synchronised source telemetry. The six original configurations remain available.
+
+See [EXPERIMENT.md](EXPERIMENT.md) for audition instructions, exact coupling formulas, telemetry format, numerical findings and known compromises. The original prototype controls described below remain available; the Collision fader replaces the old standalone Mutual FM slider.
+
 ## Run
 
 Requires Python 3 and a modern browser with AudioWorklet (Chrome/Chromium recommended). No package installation, build, backend, account, external font, or network service is required.
