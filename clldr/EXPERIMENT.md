@@ -110,3 +110,13 @@ node clldr/tests/browser-smoke.mjs
 ```
 
 Alternatively specify an external Playwright module and browser executable through `CLLDR_PLAYWRIGHT_MODULE` and `CLLDR_CHROMIUM`. `CLLDR_TEST_URL` overrides the default local server address. The test checks real AudioWorklet signal in each mode, unchanged oscillator settings, telemetry beyond pool capacity, A/B and JSON preservation, old-patch import, all four sequence notes, Drone/Repeat exclusion, one-shot passive matching, complete release and a 390-pixel layout.
+
+### Repeat playback regression
+
+```sh
+node clldr/tests/repeat-playback.mjs
+```
+
+This additional Playwright test uses the same optional environment variables, with the browser's default autoplay policy. It deliberately delays AudioWorklet loading, clicks Enable audio / Initialise / Repeat before loading completes, and measures the actual engine output through a silent test-only audio tap. Before the fix, the Repeat button highlighted but no `audition` command reached the worklet: `ctx` already existed, so the second playback request skipped module/node initialisation and its message was silently dropped. Playback now shares a full initialisation promise. Stop/preset changes cancel pending starts, stopping Repeat does not require resuming audio, and a running context is not redundantly resumed.
+
+The regression checks repeated percussive attacks with quiet gaps at 2 Hz, all four sequence pitches paired with generated audio, Strike-to-Repeat and Drone-to-Repeat transitions, cancellation during loading, direct first-use Repeat, and silence after the configured release. It failed against the pre-fix UI and passed after the fix. A separate failure with audio already fully initialised was not reproduced in Chromium; these tests do not establish physical-device or Safari behaviour.

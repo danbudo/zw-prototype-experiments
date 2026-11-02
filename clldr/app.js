@@ -13,7 +13,9 @@ let config = structuredClone(presets.pure),
   slots = { a: structuredClone(config), b: structuredClone(config) },
   lock = 0,
   timer,
-  lastAnalysis = 0;
+  lastAnalysis = 0,
+  audioInitialising = null,
+  playbackRequest = 0;
 const controls = [];
 let auditioning = false,
   latestRMS = 0,
@@ -23,6 +25,8 @@ const collisionView = new CollisionView(
   $("#telemetry-summary"),
 );
 function stopAudition() {
+  // Stop/preset changes must also cancel a start waiting for audio readiness.
+  playbackRequest++;
   if (auditioning) send("audition", false);
   auditioning = false;
   $("#repeat").setAttribute("aria-pressed", "false");
@@ -147,12 +151,14 @@ $("#clean-trigger").onclick = () =>
     resetLock();
     send("clean-on", { sustain: held || config.drone });
   });
-$("#repeat").onclick = () =>
-  safely(() => {
-    if (auditioning) {
-      stopAudition();
-      return;
-    }
+$("#repeat").onclick = () => {
+  // Stopping is immediate, even if an interrupted context cannot resume yet.
+  if (auditioning) {
+    stopAudition();
+    message("Repeat stopped. Envelope tail continues.");
+    return;
+  }
+  return safely(() => {
     clearTimeout(timer);
     held = false;
     config.drone = false;
@@ -169,6 +175,7 @@ $("#repeat").onclick = () =>
       "Sample-clock repeat active. Each note resets DSP memory; pitch lock is disabled during repeat.",
     );
   });
+};
 $("#capture-level").onclick = () => {
   if (latestRMS < 0.003) {
     message("Play a sustained sound before capturing a reference level.");
@@ -318,8 +325,13 @@ document.querySelectorAll("[data-mode]").forEach(
     }),
 );
 async function enable() {
+  // ctx exists before addModule finishes. Share full initialisation, not just resume.
+  if (audioInitialising) {
+    await audioInitialising;
+    return;
+  }
   if (ctx) {
-    await ctx.resume();
+    if (ctx.state !== "running") await ctx.resume();
     return;
   }
   if (!window.isSecureContext || !window.AudioWorkletNode)
@@ -327,6 +339,15 @@ async function enable() {
       "AudioWorklet needs HTTPS or localhost in a modern browser.",
     );
   ctx = new AudioContext({ latencyHint: "interactive" });
+  message("Loading audio engine…");
+  audioInitialising = initialiseAudio();
+  try {
+    await audioInitialising;
+  } finally {
+    audioInitialising = null;
+  }
+}
+async function initialiseAudio() {
   try {
     await ctx.audioWorklet.addModule("./worklet.js");
     node = new AudioWorkletNode(ctx, "clldr-engine", {
@@ -349,7 +370,7 @@ async function enable() {
       master.gain.setTargetAtTime(0, ctx.currentTime, 0.01);
     };
     send("config", config);
-    await ctx.resume();
+    if (ctx.state !== "running") await ctx.resume();
     $("#power").textContent = "Audio enabled ✓";
     $("#engine-status").textContent =
       `${Math.round(ctx.sampleRate / 1000)} kHz / 4× DSP`;
@@ -367,9 +388,10 @@ async function enable() {
   }
 }
 async function safely(fn) {
+  const request = fn ? ++playbackRequest : null;
   try {
     await enable();
-    fn?.();
+    if (fn && request === playbackRequest) fn();
   } catch (e) {
     message(e.message);
   }
