@@ -1,3 +1,4 @@
+import { referenceHz } from "./pitch.js";
 export const oscillatorDefaults = {
   wave: "sine",
   ratio: 1,
@@ -12,7 +13,8 @@ export const oscillatorDefaults = {
 };
 export const defaults = {
   mode: "multiply",
-  note: 57,
+  note: 45,
+  rootOctave: 0,
   tune: 0,
   volume: 0.45,
   attack: 0.008,
@@ -43,6 +45,7 @@ export function sanitize(input = {}) {
   const p = { ...defaults, a: { ...defaults.a }, b: { ...defaults.b } };
   const limits = {
     note: [24, 96],
+    rootOctave: [-2, 2],
     tune: [-100, 100],
     volume: [0, 0.85],
     attack: [0.002, 3],
@@ -65,6 +68,7 @@ export function sanitize(input = {}) {
   for (const [k, [lo, hi]] of Object.entries(limits))
     if (typeof input[k] === "number" && Number.isFinite(input[k]))
       p[k] = Math.max(lo, Math.min(hi, input[k]));
+  p.rootOctave = Math.round(p.rootOctave);
   if (["multiply", "switch", "xor"].includes(input.mode)) p.mode = input.mode;
   if (["original", "normalised", "pm"].includes(input.coupling))
     p.coupling = input.coupling;
@@ -236,11 +240,7 @@ export class Engine {
       );
       if (this.env === 0) this.stage = "off";
     }
-    const base =
-      440 *
-      2 **
-        ((Math.max(24, Math.min(96, p.note + this.noteOffset)) - 69) / 12 +
-          (p.tune + this.lock) / 1200);
+    const base = referenceHz(p, this.noteOffset, this.lock);
     for (let j = 0; j < 4; j++) {
       const values = this.values;
       for (let i = 0; i < 2; i++) {

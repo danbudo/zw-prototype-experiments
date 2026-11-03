@@ -61,6 +61,7 @@ for (const coupling of ["normalised", "pm"])
     e.configure({
       ...defaults,
       coupling,
+      note: 57,
       fm: 300,
       relativeRange: 1,
       phaseRange: 0.1,
@@ -129,7 +130,7 @@ test("clean reset repeats even noise, imperfections, sweeps and result feedback"
 test("history is synchronised, chronological and bounded; telemetry leaves audio unchanged", () => {
   const a = new Engine(48000),
     b = new Engine(48000);
-  a.configure({ ...defaults, coupling: "pm", fm: 220 });
+  a.configure({ ...defaults, note: 57, coupling: "pm", fm: 220 });
   b.configure(a.p);
   a.trigger();
   b.trigger();

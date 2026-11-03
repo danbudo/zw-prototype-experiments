@@ -3,48 +3,38 @@
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width,initial-scale=1" />
-    <meta name="theme-color" content="#151815" />
-    <link
-      rel="icon"
-      href="data:image/svg+xml,%3Csvg xmlns=%27http://www.w3.org/2000/svg%27 viewBox=%270 0 32 32%27%3E%3Crect width=%2732%27 height=%2732%27 rx=%276%27 fill=%27%23c8ed83%27/%3E%3Ctext x=%277%27 y=%2724%27 font-size=%2724%27%3EC%3C/text%3E%3C/svg%3E"
-    />
-    <title>CLLDR · Sound laboratory</title>
+    <meta name="theme-color" content="#141814" />
+    <title>CLLDR · Zero Width</title>
+    <link rel="icon" href="data:," />
     <link rel="stylesheet" href="style.css" />
   </head>
   <body>
-    <header>
-      <a class="brand" href="./">ZERO WIDTH<span>EXPERIMENTS / 001</span></a>
-      <div class="header-right">
-        <span id="engine-status" role="status">ENGINE OFFLINE</span
-        ><button id="power" class="accent">Enable audio ↗</button>
-      </div>
-    </header>
     <main>
-      <section class="intro">
-        <div>
-          <p class="eyebrow">TWO SIGNALS. ONE COLLISION.</p>
-          <h1>CLLDR<span>Sound engine laboratory</span></h1>
+      <header class="app-top">
+        <div class="wordmark">
+          CLLDR <span>ZERO WIDTH / RING MODULATION</span>
         </div>
-        <p class="intro-copy">
-          An instrument built at the point of interaction.<br />Multiply,
-          switch, or collide. Follow the sidebands.
-        </p>
-      </section>
-      <section
-        class="discovery-header panel"
-        aria-label="Laboratory audition header"
-      >
+        <div class="power-group">
+          <span id="engine-status" role="status">ENGINE OFFLINE</span
+          ><button id="power">Enable audio</button>
+        </div>
+      </header>
+      <section class="discovery-header" aria-label="Laboratory audition header">
         <div class="header-column">
-          <p class="eyebrow">LAB AUDITION</p>
+          <span class="eyebrow">AUDITION</span>
           <div class="audition-actions">
             <button
               id="momentary-trigger"
               aria-pressed="false"
-              title="Clean reset on press; release gate on lift"
+              title="Clean reset on press; gate closes on release"
             >
               Trigger
             </button>
-            <div class="audition-modes" role="group" aria-label="Audition mode">
+            <div
+              class="segments audition-modes"
+              role="group"
+              aria-label="Audition mode"
+            >
               <button id="mode-drone" aria-pressed="false">Drone</button
               ><button id="mode-sequence" aria-pressed="true">Sequence</button>
             </div>
@@ -52,100 +42,80 @@
               Play
             </button>
           </div>
-          <div id="repeat-rate"></div>
-          <label class="check"
-            ><input id="sequence" type="checkbox" />Melody
-            <span class="small-hint">temporary four-note test</span></label
-          >
+          <div class="audition-options">
+            <div id="repeat-rate"></div>
+            <label class="check"
+              ><input id="sequence" type="checkbox" />Melody</label
+            >
+          </div>
         </div>
         <div class="header-column">
-          <p class="eyebrow">REFERENCE / OUTPUT</p>
-          <label class="reference-note" for="note"
-            >Reference note
-            <input
-              id="note"
-              type="number"
-              min="24"
-              max="96"
-              step="1"
-              aria-label="Reference MIDI note"
-            /><output id="note-name">A3</output></label
-          >
-          <label class="tune"
-            >MASTER TUNE
-            <input
-              id="tune"
-              type="range"
-              min="-100"
-              max="100"
-              step="1"
-            /><output id="tune-value">0 ct</output></label
-          >
-          <label class="tune"
-            >OUTPUT
-            <input
-              id="volume"
-              type="range"
-              min="0"
-              max="0.85"
-              step="0.01" /><output id="volume-value"></output
-          ></label>
+          <span class="eyebrow">REFERENCE / OCTAVE</span>
+          <div class="reference-note">
+            <label for="note"
+              >MIDI
+              <input
+                id="note"
+                type="number"
+                min="24"
+                max="96"
+                step="1"
+                aria-label="Reference MIDI note" /></label
+            ><output id="note-name"></output
+            ><span class="provisional">provisional A2 start</span>
+          </div>
+          <div id="octave-control"></div>
+          <div class="tracking-row">
+            <span>TRACK</span>
+            <div id="tracking-control"></div>
+            <output id="tracking-note"></output>
+          </div>
         </div>
-        <div class="header-column">
-          <p class="eyebrow">TEMPORARY LAB TOOLS</p>
-          <div id="initialise-slot"></div>
-          <div class="slots">
-            <button id="slot-a" aria-pressed="true">Snapshot A</button
-            ><button id="slot-b" aria-pressed="false">Snapshot B</button
-            ><button id="store">Store current → B</button>
+        <div class="header-column output-column">
+          <div id="header-output"></div>
+          <div class="output-info">
+            <span class="eyebrow">FINAL OUTPUT</span
+            ><meter
+              id="output-meter"
+              min="-72"
+              max="0"
+              value="-72"
+              aria-label="Final audio peak level"
+            ></meter>
+            <div class="level">
+              RMS <b id="rms">−∞</b>
+              <span> / PEAK <b id="peak">−∞</b> dBFS</span>
+            </div>
+            <div id="initialise-slot"></div>
           </div>
-          <div class="file-actions">
-            <button id="save">Export JSON ↓</button
-            ><button id="load">Import JSON ↑</button
-            ><input
-              id="file"
-              type="file"
-              accept="application/json,.json"
-              hidden
-            />
-          </div>
-          <details id="lab-configurations">
-            <summary>Unreviewed test configurations</summary>
-            <div class="preset-list" id="presets"></div>
-          </details>
         </div>
         <p id="message" role="status">
-          Enable audio, then hold Trigger or press Play. These are laboratory
-          audition tools.
+          Hold Trigger, or choose Drone / Sequence and press Play. Start
+          quietly.
         </p>
       </section>
-      <section class="engine-grid">
-        <div id="osc-a" class="panel oscillator"></div>
-        <div class="interaction panel">
-          <p class="eyebrow">02 / INTERACTION</p>
-          <h2>The collision</h2>
-          <div class="modes" role="group" aria-label="Interaction mode">
-            <button data-mode="multiply">
-              <strong>A × B</strong><span>Ideal multiplication</span></button
-            ><button data-mode="switch">
-              <strong>A × sign(B)</strong
-              ><span>Polarity switching</span></button
-            ><button data-mode="xor">
-              <strong>A ⊕ B</strong><span>Sign-bit XOR logic</span>
-            </button>
+      <section
+        class="fascia"
+        aria-label="CLLDR oscillator and collision controls"
+      >
+        <div id="osc-a" class="source source-a"></div>
+        <div class="interaction">
+          <div class="display-heading">
+            <span>COLLISION</span><output id="relationship">B/A —</output>
           </div>
-          <label class="mechanism-label" for="mechanism"
-            >COUPLING MECHANISM</label
-          >
-          <select id="mechanism">
-            <option value="original">Original FM · absolute Hz</option>
-            <option value="normalised">Normalised FM · relative depth</option>
-            <option value="pm">Mutual PM · cycles</option>
-          </select>
+          <canvas
+            id="collision-scope"
+            aria-label="Synchronized oscillator A, raw interaction result, and oscillator B"
+          ></canvas>
+          <div class="modes" role="group" aria-label="Interaction mode">
+            <button data-mode="multiply">Multiply <span>A × B</span></button
+            ><button data-mode="switch">Switch <span>A × sign(B)</span></button
+            ><button data-mode="xor">XOR <span>A ⊕ B</span></button>
+          </div>
           <div class="collision-control">
             <label for="collision"
               >Collision
-              <span class="collision-exact"
+              <span
                 ><input
                   id="collision-value"
                   type="number"
@@ -164,178 +134,162 @@
               step="1"
               value="0"
             />
-            <p id="collision-depth" class="small"></p>
+            <p id="collision-depth"></p>
           </div>
-          <details class="scaling">
-            <summary>Experimental range &amp; response</summary>
-            <div id="scaling"></div>
-            <p class="small">
-              Depth = range × Collision<sup>curve</sup>. Equal fader positions
-              do not imply equivalent sound or modulation across mechanisms.
-            </p>
-          </details>
-          <div id="coupling"></div>
-          <label class="check sync"
-            ><input id="sync" type="checkbox" />Hard sync B to A</label
-          >
-          <p class="small">
-            A → interaction ← B<br />4× oversampling → DC block → envelope →
-            soft ceiling
+          <p class="signal-note">
+            RESULT is raw, before the amplitude envelope. Ring modulation
+            remains active at zero Collision.
           </p>
         </div>
-        <div id="osc-b" class="panel oscillator"></div>
-      </section>
-      <section class="lower-grid">
-        <div class="panel">
-          <p class="eyebrow">04 / ARTICULATION</p>
-          <h2>Amplitude envelope</h2>
-          <div id="envelope"></div>
-          <p class="small">
-            Strike retriggers phase and pitch sweeps. Hold sustains the gate;
-            Drone keeps it open.
-          </p>
+        <div id="osc-b" class="source source-b"></div>
+        <div class="source-bank source-a" id="bank-a">
+          <span class="eyebrow">A / CHARACTER</span>
+          <div id="bank-controls-a"></div>
         </div>
-        <div class="panel">
-          <p class="eyebrow">05 / NON-IDEAL BEHAVIOUR</p>
-          <h2>Circuit imperfections</h2>
-          <div id="circuit"></div>
-          <p class="small">
-            A deliberately abstract circuit model. Feedback is delayed,
-            saturated and bounded.
-          </p>
-        </div>
-        <div class="panel comparison">
-          <p class="eyebrow">06 / COMPARE</p>
-          <h2>Keep a reference</h2>
-          <div id="level-trim"></div>
-          <div class="match-buttons">
-            <button id="capture-level">Capture reference level</button
-            ><button id="match-level">Match once</button>
-          </div>
-          <p id="match-status" class="small">
-            Manual trim / optional one-shot RMS estimate. No automatic gain
-            riding.
-          </p>
-          <details class="comparison-readout">
-            <summary id="comparison-summary">
-              Snapshot A ↔ B: settings identical
-            </summary>
-            <ul id="comparison-diff"></ul>
-          </details>
-          <p class="small">
-            Values beside sliders are editable. For one-parameter tests, copy a
-            reference into both snapshots, edit one value, then check the
-            difference count. Settings do not capture DSP history; use Clean
-            strike or the next Repeat onset for controlled comparisons.
-          </p>
-          <p id="slot-status" class="small">
-            A and B start with the Pure configuration.
-          </p>
-          <p class="small">
-            Slots store the complete configuration. Switching preserves the
-            current gate; phase and envelopes continue.
-          </p>
+        <div class="source-bank source-b" id="bank-b">
+          <span class="eyebrow">B / CHARACTER</span>
+          <div id="bank-controls-b"></div>
         </div>
       </section>
-      <section class="panel collision-monitor">
-        <div class="panel-heading">
-          <div>
-            <p class="eyebrow">SYNCHRONISED SOURCE TELEMETRY</p>
-            <h2>Two sources, one interaction</h2>
-          </div>
-          <button id="export-telemetry">Export snapshot ↓</button>
+      <section class="amp-envelope">
+        <div>
+          <span class="eyebrow">ENV 1</span>
+          <h2>Amplitude</h2>
         </div>
-        <canvas
-          id="collision-scope"
-          aria-label="Synchronous oscillator A and B traces and interaction output"
-        ></canvas>
-        <p id="telemetry-summary" class="small">
-          Enable audio to receive oscillator telemetry.
-        </p>
-        <p class="small">
-          A = lime · B = amber · lower trace = raw interaction. Shared time
-          window; position follows Collision, waveform shape comes only from
-          actual signals. Sources are before the amplitude envelope, so movement
-          can continue while output is silent. No independent trace triggering
-          or fabricated agitation.
-        </p>
+        <div id="envelope"></div>
       </section>
-      <section class="monitor-grid">
-        <div class="panel scope">
-          <div class="panel-heading">
-            <div>
-              <p class="eyebrow">07 / FINAL OUTPUT</p>
-              <h2>Oscilloscope</h2>
+      <details id="advanced" class="rack">
+        <summary>
+          Advanced <span>Tuning · coupling · diagnostics · lab tools</span>
+        </summary>
+        <div class="advanced-grid">
+          <section>
+            <h2>OSC A</h2>
+            <div id="fine-a"></div>
+          </section>
+          <section>
+            <h2>COLLISION</h2>
+            <div id="mechanism-control"></div>
+            <div class="scaling"><div id="scaling"></div></div>
+            <div id="coupling"></div>
+            <label class="check"
+              ><input id="sync" type="checkbox" />A → B hard sync</label
+            >
+            <div id="calibration"></div>
+          </section>
+          <section>
+            <h2>OSC B</h2>
+            <div id="fine-b"></div>
+          </section>
+        </div>
+        <div class="lab-grid">
+          <section class="comparison">
+            <h2>Temporary lab comparison</h2>
+            <div class="slots">
+              <button id="slot-a" aria-pressed="true">Snapshot A</button
+              ><button id="slot-b" aria-pressed="false">Snapshot B</button
+              ><button id="store">Store current → B</button>
             </div>
-            <span class="tag">TIME DOMAIN</span>
-          </div>
-          <canvas id="scope" aria-label="Final output waveform"></canvas>
+            <div id="level-trim"></div>
+            <div class="match-buttons">
+              <button id="capture-level">Capture reference level</button
+              ><button id="match-level">Match once</button>
+            </div>
+            <p id="match-status">
+              Passive attenuation only; no automatic gain correction.
+            </p>
+            <details class="comparison-readout">
+              <summary id="comparison-summary">
+                Snapshot A ↔ B: settings identical
+              </summary>
+              <ul id="comparison-diff"></ul>
+            </details>
+            <p id="slot-status">
+              Snapshots retain settings, not live DSP history. Compare fresh
+              Trigger/Sequence onsets.
+            </p>
+          </section>
+          <section>
+            <h2>Temporary files / stimuli</h2>
+            <div class="file-actions">
+              <button id="save">Export JSON</button
+              ><button id="load">Import JSON</button
+              ><input
+                id="file"
+                type="file"
+                accept="application/json,.json"
+                hidden
+              />
+            </div>
+            <details id="lab-configurations">
+              <summary>Unreviewed test configurations</summary>
+              <div id="presets" class="preset-list"></div>
+            </details>
+            <details id="legacy-audition">
+              <summary>Legacy audition controls</summary>
+              <div class="legacy-actions">
+                <button id="trigger">Legacy Strike · 180 ms</button
+                ><button id="clean-trigger">Clean pulse · 180 ms</button
+                ><button id="hold" aria-pressed="false">Legacy Hold</button
+                ><button id="repeat" aria-pressed="false">Legacy Repeat</button
+                ><label class="check"
+                  ><input id="drone" type="checkbox" />Legacy Drone</label
+                ><button id="stop">Stop / release all</button>
+              </div>
+            </details>
+            <p>
+              Pitch sweep controls remain temporarily in oscillator detail
+              pending Stage B removal. They are not part of the character banks.
+            </p>
+          </section>
         </div>
-        <div class="panel spectrum">
-          <div class="panel-heading">
-            <h2>Spectrum</h2>
-            <span class="tag">30 Hz — 20 kHz · LOG</span>
+        <section class="diagnostics">
+          <h2>Signal diagnostics</h2>
+          <p id="telemetry-summary">Enable audio for source telemetry.</p>
+          <button id="export-telemetry">Export telemetry snapshot</button>
+          <div class="monitor-grid">
+            <div>
+              <h3>Final waveform</h3>
+              <canvas id="scope" aria-label="Final output waveform"></canvas>
+            </div>
+            <div>
+              <h3>Spectrum</h3>
+              <canvas
+                id="spectrum"
+                aria-label="Final output frequency spectrum"
+              ></canvas>
+            </div>
+            <div class="tuner">
+              <h3>Output tuner</h3>
+              <span id="confidence">NO SIGNAL</span>
+              <div class="pitch">
+                <strong id="pitch-note">—</strong
+                ><span id="pitch-cents">— ct</span>
+              </div>
+              <div class="cents-scale"><i id="needle"></i></div>
+              <p id="pitch-hz">No stable periodicity</p>
+              <label class="check"
+                ><input id="pitch-lock" type="checkbox" />Experimental internal
+                pitch lock</label
+              >
+              <p id="lock-status">Correction limited to ±200 cents</p>
+            </div>
           </div>
-          <canvas
-            id="spectrum"
-            aria-label="Final output frequency spectrum"
-          ></canvas>
-        </div>
-        <div class="panel tuner">
-          <p class="eyebrow">08 / LISTENING BACK</p>
-          <div class="tuner-title">
-            <h2>Output tuner</h2>
-            <span id="confidence">NO SIGNAL</span>
-          </div>
-          <div class="pitch">
-            <strong id="pitch-note">—</strong><span id="pitch-cents">— ct</span>
-          </div>
-          <div class="cents-scale"><i id="needle"></i></div>
-          <div class="scale-labels">
-            <span>−50</span><span>0</span><span>+50 ct</span>
-          </div>
-          <p id="pitch-hz" class="small">
-            Waiting for a stable periodic signal
-          </p>
-          <label class="check"
-            ><input id="pitch-lock" type="checkbox" />Experimental pitch
-            lock</label
-          >
-          <p id="lock-status" class="small">
-            Targets the root note · correction limited to ±200 ct
-          </p>
-          <div class="level">
-            <span>RMS <b id="rms">−∞</b> dBFS</span
-            ><span>PEAK <b id="peak">−∞</b> dBFS</span>
-          </div>
-        </div>
-      </section>
-      <details class="panel legacy-audition" id="legacy-audition">
-        <summary>Advanced lab: legacy audition controls</summary>
-        <div class="legacy-actions">
-          <button id="trigger">Legacy Strike · 180 ms</button
-          ><button id="clean-trigger">Clean pulse · 180 ms</button
-          ><button id="hold" aria-pressed="false">Legacy Hold</button
-          ><button id="repeat" aria-pressed="false">Legacy Repeat</button
-          ><label class="check"
-            ><input id="drone" type="checkbox" />Legacy Drone</label
-          ><button id="stop" class="danger">Stop / release all</button>
-        </div>
-        <p class="small">
-          Legacy Strike and body Space retain engine history; Clean pulse resets
-          it. Hold is a separate latch. The main Trigger always interrupts lab
-          playback and clean-resets on press, then releases on lift. Main mode
-          changes stop playback; Drone Play sends an immediate legacy note-on,
-          retaining loop and filter memory.
+        </section>
+      </details>
+      <details id="chaos" class="rack">
+        <summary>Chaos <span>Existing circuit character</span></summary>
+        <div id="circuit"></div>
+        <p>
+          Stage A retains the existing character algorithms. Post-processing
+          removals are deferred to the Stage B review.
         </p>
       </details>
       <footer>
-        <span>CLLDR / DISPOSABLE SOUND LABORATORY</span>
-        <p>
-          Start quietly. XOR and sync create dense harmonics. Tuning may be
-          ambiguous for inharmonic or noisy sounds. This is an exploratory
-          model, not a circuit emulation.
-        </p>
+        <span>CLLDR / ZERO WIDTH</span
+        ><span
+          >Sources and raw RESULT may move while final audio is silent.</span
+        >
       </footer>
     </main>
     <script type="module" src="app.js"></script>

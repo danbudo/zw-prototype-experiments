@@ -39,6 +39,7 @@ try {
       ),
     3,
   );
+  await page.locator("#advanced > summary").click();
   await page.locator("#legacy-audition > summary").click();
   await page.locator("#lab-configurations > summary").click();
   await page.locator("#power").click();
@@ -110,7 +111,7 @@ try {
   await range("collision", 150);
   let oscillatorSettings;
   for (const coupling of ["original", "normalised", "pm"]) {
-    await page.locator("#mechanism").selectOption(coupling);
+    await page.locator(`#mechanism [data-value="${coupling}"]`).click();
     await page.locator("#clean-trigger").click();
     await page.waitForTimeout(120);
     assert.ok((await level()) > 0.001);
@@ -153,17 +154,19 @@ try {
   );
   console.log("telemetry pool continues beyond three packets");
   await page.locator("#hold").click();
-  await page.locator(".scaling > summary").click();
   await range("curve", 2);
   await range("phaseRange", 0.12);
   await range("trim", -2);
   await range("auditionRate", 3);
   await page.locator("#sequence").check();
   await page.locator("#store").click();
-  await page.locator("#mechanism").selectOption("original");
+  await page.locator(`#mechanism [data-value="${"original"}"]`).click();
   await range("collision", 800);
   await page.locator("#slot-b").click();
-  assert.equal(await page.locator("#mechanism").inputValue(), "pm");
+  assert.equal(
+    await page.locator("#mechanism").getAttribute("data-value"),
+    "pm",
+  );
   assert.equal(await page.locator("#collision").inputValue(), "150");
   assert.equal(await page.locator("#phaseRange").inputValue(), "0.12");
   assert.equal(await page.locator("#curve").inputValue(), "2");
@@ -194,7 +197,7 @@ try {
     const text = await page.locator("#telemetry-summary").textContent();
     notes.add(Number(text.match(/note (\d+)/)[1]));
   }
-  for (const n of [57, 69, 45, 64])
+  for (const n of [45, 57, 33, 52])
     assert.ok(notes.has(n), `sequence note ${n}`);
   console.log("sample-clock sequence observed all four pitches");
   await page.locator("#drone").check();
@@ -234,11 +237,14 @@ try {
       JSON.stringify({ format: "clldr", version: 1, config: legacy }),
     ),
   });
-  assert.equal(await page.locator("#mechanism").inputValue(), "original");
+  assert.equal(
+    await page.locator("#mechanism").getAttribute("data-value"),
+    "original",
+  );
   assert.equal(await page.locator("#collision").inputValue(), "190");
   console.log("legacy v1 FM patch imports correctly");
   await page.locator('[data-preset="initialise"]').click();
-  await page.locator("#mechanism").selectOption("normalised");
+  await page.locator(`#mechanism [data-value="${"normalised"}"]`).click();
   await range("collision", 350);
   await page.locator("#hold").click();
   await page.waitForTimeout(250);

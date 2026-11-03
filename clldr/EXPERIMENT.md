@@ -12,14 +12,14 @@ npm start
 
 Open the server using localhost or an HTTPS development forwarding URL. Click **Enable audio**, then **Initialise**. No dependency installation/build is required. Python 3 serves the files; a modern AudioWorklet browser is required.
 
-Initialise selects sine A at 220 Hz and sine B at 330 Hz, full tracking, zero sweeps/bias/imperfections/result feedback, Original FM, Collision zero, linear response, unity listening trim and the original ADSR. It also turns off the existing experimental output pitch lock. The original six presets remain available and retain their sounds; legacy Drone and Collision intentionally restore nonzero result feedback, so Initialise is the clean comparison starting point.
+Initialise now selects provisional sine A at 110 Hz and sine B at 165 Hz (root octave zero), full tracking, zero sweeps/bias/imperfections/result feedback, Original FM, Collision zero, linear response, unity listening trim and the original ADSR. It also turns off the existing experimental output pitch lock. The original six presets remain available and retain their sounds; legacy Drone and Collision intentionally restore nonzero result feedback, so Initialise is the clean comparison starting point.
 
 1. Choose Multiply, Switch or XOR, and set the oscillators. Changing the **coupling mechanism** changes only the mechanism (and clears the transient output-tuner correction); it leaves oscillator settings, fader position, ranges, curve and trim intact.
 2. Raise **Collision** slowly. The readout below it gives the effective depth in Hz, relative units or cycles. Equal percentages across mechanisms are not equivalent modulation strengths.
-3. Use **Clean strike** for a deterministic state reset and a sample-clock 180 ms gate. Hold or Drone keeps that strike open. The original **Strike** retains its legacy retrigger behaviour and UI-timed release.
-4. **Repeat notes** uses the audio sample clock, 0.25–8 notes/second and a 55% gate. Every onset resets oscillator phases, PM memory, envelope, feedback, noise seed, DC blocker and decimation-filter memory. This deliberately truncates previous tails. Pitch lock is disabled during repeat. Keep it off for controlled manual comparisons too.
-5. Enable the fixed pitch sequence to hear root / +12 / −12 / +7 semitones. The note range clamps at MIDI 24–96; choose a middle root to hear all four distinct pitches. Sequence changes root-note input; each oscillator's tracking/offset/sweep still applies. This is a fixed listening aid, not a general sequencer.
-6. Drone and Repeat are exclusive. Drone retains a continuous state while switching mechanisms; use Clean strike or Repeat when history-independent comparisons are needed. Stop cancels repetition and releases the envelope.
+3. Hold the header **Trigger** for a deterministic clean reset on press and release on lift. Legacy clean-pulse/Strike/Hold controls remain in Advanced; they retain their original gate semantics.
+4. **Sequence → Play** (or Legacy Repeat) uses the audio sample clock, 0.25–8 notes/second and a 55% gate. Every onset resets oscillator phases, PM memory, envelope, feedback, noise seed, DC blocker and decimation-filter memory. This deliberately truncates previous tails. Pitch lock is disabled during repeat. Keep it off for controlled manual comparisons too.
+5. Enable the fixed pitch sequence to hear root / +12 / −12 / +7 semitones. The base-note editor remains MIDI 24–96, but root octave and melody offsets extend the played reference without that old runtime clamp. Oscillator-frequency protection still applies at extreme high targets. Sequence changes root-note input; each oscillator's tracking/offset/sweep still applies. This is a fixed listening aid, not a general sequencer.
+6. Drone and Sequence are exclusive. Drone retains continuous state while switching mechanisms; use Trigger or Sequence for clean comparisons. Stop cancels repetition and releases the envelope.
 7. Store the current configuration in the other **A/B** slot. Mechanism, fader, curve, all three depth ranges, listening trim, repetition rate/sequence and underlying oscillator settings are retained. Playback state, sequence position and output pitch-lock correction are not stored. A/B preserves a held gate/ongoing repeat where applicable; recalling a Drone configuration stops repeat.
 
 ### Level matching
@@ -50,7 +50,7 @@ The `fm` JSON field is retained as the 0–1000 Collision position. With omitted
 
 ## Telemetry and visual semantics
 
-`telemetry.js` defines a bounded 2048-frame interleaved history. The fields, in order, are:
+`telemetry.js` defines a bounded 8192-frame interleaved history. The fields, in order, are:
 
 `a`, `b`, `phaseA`, `phaseB`, `carrierHzA`, `carrierHzB`, `readHzA`, `readHzB`, `targetA`, `targetB`, `interaction`, `loopInput`.
 
@@ -60,11 +60,11 @@ The `fm` JSON field is retained as the 0–1000 Collision position. With omitted
 - Targets are the uncoupled requested frequencies, before FM/result feedback and clamping; they may be negative with Hz offsets.
 - Interaction is raw Multiply/Switch/XOR; loop input additionally includes imperfections/drive, before FIR, DC removal, amplitude envelope and final ceiling.
 
-One snapshot is taken at the last oversample of each output sample. The shared window is about 42.7 ms at 48 kHz, shorter at higher rates. It is raw diagnostic sampling, not band-limited source audio. It can miss intra-sample events and visually alias. This is a compromise between bounded history length and communication cost, not a claim to record every 4× internal sample.
+One snapshot is taken at the last oversample of each output sample. The shared window is about 170.7 ms at 48 kHz / 85.3 ms at 96 kHz. It is raw diagnostic sampling, not band-limited source audio. It can miss intra-sample events and visually alias. This is a compromise between bounded history length and communication cost, not a claim to record every 4× internal sample.
 
-The worklet reuses a history plus a three-buffer transferable pool, approximately 384 KiB total. Packets are sent at approximately 20 Hz, about 1.9 MiB/s maximum at full window size. Missing returned buffers cause packet drops, not unbounded queuing or audio blocking. No telemetry allocation occurs per audio sample. The UI returns old buffers and renders only its latest snapshot.
+The worklet reuses a history plus a three-buffer transferable pool, approximately 1.5 MiB total. Packets are sent at approximately 20 Hz, about 7.5 MiB/s maximum at full window size. Missing returned buffers cause packet drops, not unbounded queuing or audio blocking. No telemetry allocation occurs per audio sample. The UI returns old buffers and renders only its latest snapshot.
 
-The lime A and amber B traces use the same sample indices and time window. At zero Collision their centres are separated; at maximum their centres meet. Only position is metaphorical. Trace deformation comes from telemetry, without independently triggering/aligning the sources or inventing agitation. The lower blue trace is the raw interaction. Sources continue running before the amplitude envelope, so they can move while final output is silent. Pixel extrema and sample interpolation aid drawing; values outside ±2 are visually clipped without changing audio.
+The lime A, blue raw RESULT and amber B traces use the same sample indices and time window, sharing a single A-edge trigger where available. A/B centres approach modestly with Collision, while RESULT stays separate. Only position is metaphorical. Deformation comes from telemetry; there is no independent B/RESULT alignment or invented agitation. Sources continue before the amplitude envelope and may move while final output is silent. Pixel extrema preserve observed peaks; amplitude scales are labelled and expand above ±1. The shared timebase adapts to nominal targets, bounded by actual history. See [CORRECTIVE-STAGE-A.md](CORRECTIVE-STAGE-A.md) for current display semantics and limits.
 
 **Export snapshot** saves field definitions, sample rate, frame endpoint, mechanism, depth, note, samples and current control configuration. A window may straddle control changes; the configuration is the current UI state, not a per-sample automation log. Bounded snapshots are diagnostic captures, not continuous recordings or synchronisation classifiers.
 
@@ -101,7 +101,7 @@ npm test
 node clldr/tests/survey.mjs
 ```
 
-The 34 automated tests include pre-change Original FM fixtures from commit `cc4f5ab` (six legacy configurations plus low/high extreme FM), exact zero-coupling equivalence, independent causal sine references, scaling under octave-plus-doubled-sample-rate, deterministic reset/sequence/180 ms gating, history alignment, telemetry backpressure/recycling and 1728 short extreme combinations at 44.1/48/96 kHz. The scaling check establishes the formula's similarity under that paired change, not perfect device/sample-rate invariance of nonlinear feedback.
+The automated tests include pre-change Original FM fixtures from commit `cc4f5ab` (six legacy configurations plus low/high extreme FM), exact zero-coupling equivalence, independent causal sine references, scaling under octave-plus-doubled-sample-rate, deterministic reset/sequence/180 ms gating, history alignment, telemetry backpressure/recycling and 1728 short extreme combinations at 44.1/48/96 kHz. The scaling check establishes the formula's similarity under that paired change, not perfect device/sample-rate invariance of nonlinear feedback.
 
 The optional browser smoke test requires Playwright and Chromium in the test environment, but adds no runtime dependency. With Playwright available as a normal installed package:
 

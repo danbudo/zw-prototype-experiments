@@ -1,3 +1,4 @@
+import { referenceMidi } from "./pitch.js";
 import { Engine } from "./dsp.js";
 import { History, HISTORY, FIELDS } from "./telemetry.js";
 import { Audition } from "./audition.js";
@@ -65,10 +66,7 @@ class CLLDR extends AudioWorkletProcessor {
             count,
             endFrame: this.frames,
             rate: sampleRate,
-            note: Math.max(
-              24,
-              Math.min(96, this.engine.p.note + this.engine.noteOffset),
-            ),
+            note: referenceMidi(this.engine.p, this.engine.noteOffset),
             depth: this.engine.depth,
             coupling: this.engine.p.coupling,
           },

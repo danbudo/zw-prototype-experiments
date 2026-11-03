@@ -18,7 +18,7 @@ test("comparison reveals confounds including trim, note, algorithm and envelope"
   const variant = {
     ...defaults,
     trim: -6,
-    note: 45,
+    note: 57,
     coupling: "pm",
     decay: 0.08,
     b: { ...defaults.b, shape: 0.3 },
@@ -38,26 +38,28 @@ test("every persisted field participates while runtime state is excluded", () =>
       ? Object.keys(value).map((k) => [key, k])
       : [[key]],
   );
-  assert.equal(fields.length, 44);
+  assert.equal(fields.length, 45);
   for (const path of fields) {
     const copy = structuredClone(base);
     const obj = path.length === 2 ? copy[path[0]] : copy,
       key = path.at(-1),
       value = obj[key];
     obj[key] =
-      typeof value === "number"
-        ? value === 0
-          ? key === "trim"
-            ? -0.01
-            : 0.01
-          : value * 0.9
-        : typeof value === "boolean"
-          ? !value
-          : value === "sine"
-            ? "triangle"
-            : value === "multiply"
-              ? "xor"
-              : "pm";
+      key === "rootOctave"
+        ? 1
+        : typeof value === "number"
+          ? value === 0
+            ? key === "trim"
+              ? -0.01
+              : 0.01
+            : value * 0.9
+          : typeof value === "boolean"
+            ? !value
+            : value === "sine"
+              ? "triangle"
+              : value === "multiply"
+                ? "xor"
+                : "pm";
     assert.ok(
       configurationDifferences(base, copy).some(
         (d) => d.path === path.join("."),

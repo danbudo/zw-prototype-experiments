@@ -5,6 +5,7 @@ export class CollisionView {
     this.summary = summary;
     this.packet = null;
     this.data = null;
+    this.window = null;
   }
   accept(packet, port) {
     if (this.packet)
@@ -16,25 +17,27 @@ export class CollisionView {
     const n = packet.count,
       w = FIELDS.length,
       d = this.data;
-    let stalledA = 0,
-      stalledB = 0,
+    if (!n) return;
+    let stoppedA = 0,
+      stoppedB = 0,
       minA = Infinity,
       maxA = -Infinity,
       minB = Infinity,
       maxB = -Infinity;
     for (let i = 0; i < n; i++) {
       const p = i * w;
-      stalledA += d[p + 4] === 0;
-      stalledB += d[p + 5] === 0;
+      stoppedA += d[p + 4] === 0;
+      stoppedB += d[p + 5] === 0;
       minA = Math.min(minA, d[p + 6]);
       maxA = Math.max(maxA, d[p + 6]);
       minB = Math.min(minB, d[p + 7]);
       maxB = Math.max(maxB, d[p + 7]);
     }
     const end = (n - 1) * w;
-    this.summary.textContent = `${packet.coupling} · ${((1000 * n) / packet.rate).toFixed(1)} ms shared window · note ${packet.note} · A target ${d[end + 8].toFixed(1)} Hz / read velocity ${minA.toFixed(0)}…${maxA.toFixed(0)} Hz · B target ${d[end + 9].toFixed(1)} Hz / read velocity ${minB.toFixed(0)}…${maxB.toFixed(0)} Hz · stopped carrier samples A/B ${stalledA}/${stalledB}. Read velocity includes PM and sync jumps; it is not detected pitch.`;
+    this.summary.textContent = `${packet.coupling} · ${((1000 * n) / packet.rate).toFixed(1)} ms captured · note ${packet.note} · A target ${d[end + 8].toFixed(2)} Hz / read velocity ${minA.toFixed(0)}…${maxA.toFixed(0)} Hz · B target ${d[end + 9].toFixed(2)} Hz / read velocity ${minB.toFixed(0)}…${maxB.toFixed(0)} Hz · stopped carrier samples A/B ${stoppedA}/${stoppedB}. Raw snapshots; read velocity is not detected pitch.`;
     this.canvas.dataset.frames = packet.endFrame;
     this.canvas.dataset.coupling = packet.coupling;
+    this.canvas.dataset.note = packet.note;
   }
   snapshot() {
     if (!this.packet) return null;
@@ -42,72 +45,144 @@ export class CollisionView {
     return {
       ...meta,
       fields: FIELDS,
+      view: this.window,
       sampling:
-        "last oversample of each output sample; raw, not anti-aliased display data",
+        "last oversample of each output sample; shared window, raw display data",
       samples: Array.from(
         this.data.subarray(0, this.packet.count * FIELDS.length),
       ),
     };
   }
-  draw(amount) {
+  draw(amount, mode = "multiply") {
     const canvas = this.canvas,
       r = devicePixelRatio || 1,
-      w = Math.round(canvas.clientWidth * r),
-      h = Math.round(canvas.clientHeight * r);
-    if (canvas.width !== w || canvas.height !== h) {
-      canvas.width = w;
-      canvas.height = h;
+      w = canvas.clientWidth,
+      h = canvas.clientHeight;
+    if (
+      canvas.width !== Math.round(w * r) ||
+      canvas.height !== Math.round(h * r)
+    ) {
+      canvas.width = Math.round(w * r);
+      canvas.height = Math.round(h * r);
     }
     const c = canvas.getContext("2d");
+    c.setTransform(r, 0, 0, r, 0, 0);
     c.clearRect(0, 0, w, h);
-    const top = h * 0.77,
-      center = top * 0.5,
-      separation = top * 0.24 * (1 - amount),
-      scale = top * 0.16;
-    c.lineWidth = r;
-    c.strokeStyle = "#354033";
-    for (const y of [center - separation, center + separation, h * 0.9]) {
-      c.beginPath();
-      c.moveTo(0, y);
-      c.lineTo(w, y);
-      c.stroke();
+    const colours = ["#c6e88b", "#a4bfce", "#e8b77e"],
+      labels = [
+        "OSC A",
+        mode === "multiply"
+          ? "RESULT · A × B"
+          : mode === "switch"
+            ? "RESULT · SWITCH"
+            : "RESULT · XOR",
+        "OSC B",
+      ];
+    const centers = [
+        h * (0.17 + 0.045 * amount),
+        h * 0.5,
+        h * (0.83 - 0.045 * amount),
+      ],
+      fields = [0, 10, 1],
+      left = 10,
+      right = w - 10;
+    if (!this.packet) {
+      c.fillStyle = "#8b9785";
+      c.font = "10px monospace";
+      c.fillText("Enable audio to see actual source signals", 12, h / 2);
+      return;
     }
-    if (!this.packet) return;
-    const n = this.packet.count,
+    const packet = this.packet,
       stride = FIELDS.length,
-      d = this.data;
-    // Shared sample indices, min/max per pixel: never align sources independently.
-    for (const [field, y, amplitude, color] of [
-      [0, center - separation, scale, "#c8ed83"],
-      [1, center + separation, scale, "#edaf76"],
-      [10, h * 0.9, h * 0.065, "#98b5ce"],
-    ]) {
-      c.strokeStyle = color;
-      c.lineWidth = r;
+      d = this.data,
+      end = (packet.count - 1) * stride;
+    const fa = d[end + 8],
+      fb = d[end + 9],
+      positive = [fa, fb].filter((v) => v > 0),
+      slow = positive.length ? Math.min(...positive) : 20;
+    const desired = Math.ceil(
+      packet.rate * Math.max(0.004, Math.min(0.17, 3 / slow)),
+    );
+    const count = Math.max(2, Math.min(packet.count, desired));
+    let start = packet.count - count,
+      triggered = false;
+    // One A edge aligns all three traces. Never independently align B or RESULT.
+    const back = Math.min(start, Math.ceil(packet.rate / Math.max(5, fa)));
+    for (let i = start; i > start - back; i--) {
+      if (d[(i - 1) * stride] < 0 && d[i * stride] >= 0) {
+        start = i;
+        triggered = true;
+        break;
+      }
+    }
+    this.window = {
+      start,
+      count,
+      durationMs: (1000 * count) / packet.rate,
+      trigger: triggered ? "shared A rising edge" : "shared sample clock",
+    };
+    canvas.dataset.windowMs = this.window.durationMs;
+    c.font = "8px monospace";
+    c.lineWidth = 0.7;
+    for (let trace = 0; trace < 3; trace++) {
+      const field = fields[trace],
+        center = centers[trace];
+      let peak = 0;
+      for (let i = 0; i < count; i++)
+        peak = Math.max(peak, Math.abs(d[(start + i) * stride + field]));
+      const scale = Math.max(1, Math.ceil(peak * 2) / 2),
+        height = (h * (trace === 1 ? 0.12 : 0.1)) / scale;
+      c.strokeStyle = "#2b3529";
       c.beginPath();
-      for (let x = 0; x < w; x += r) {
-        const from = Math.floor((x / w) * n),
-          to = Math.min(n, Math.max(from + 1, Math.floor(((x + r) / w) * n)));
+      c.moveTo(left, center);
+      c.lineTo(right, center);
+      c.stroke();
+      c.fillStyle = colours[trace];
+      c.fillText(labels[trace], left, center - h * 0.12);
+      c.textAlign = "right";
+      c.fillStyle = "#879780";
+      c.fillText(`±${scale}`, right, center - h * 0.12);
+      c.textAlign = "left";
+      c.strokeStyle = colours[trace];
+      c.lineWidth = 1;
+      c.beginPath();
+      for (let x = 0; x < right - left; x++) {
+        const from = Math.floor((x / (right - left)) * count),
+          to = Math.min(
+            count,
+            Math.max(from + 1, Math.floor(((x + 1) / (right - left)) * count)),
+          );
         let lo = Infinity,
           hi = -Infinity;
         for (let i = from; i < to; i++) {
-          const v = d[i * stride + field];
+          const v = d[(start + i) * stride + field];
           lo = Math.min(lo, v);
           hi = Math.max(hi, v);
         }
-        c.moveTo(x, y - Math.max(-2, Math.min(2, lo)) * amplitude);
-        c.lineTo(x, y - Math.max(-2, Math.min(2, hi)) * amplitude);
+        c.moveTo(left + x, center - lo * height);
+        c.lineTo(left + x, center - hi * height);
       }
       c.stroke();
-      // Join actual sample values as well as the per-pixel extrema.
       c.beginPath();
-      for (let x = 0; x < w; x += r) {
-        const value = d[Math.floor((x / w) * n) * stride + field];
-        const py = y - Math.max(-2, Math.min(2, value)) * amplitude;
-        if (x === 0) c.moveTo(x, py);
-        else c.lineTo(x, py);
+      for (let x = 0; x < right - left; x++) {
+        const v =
+            d[
+              (start + Math.floor((x / (right - left)) * count)) * stride +
+                field
+            ],
+          y = center - v * height;
+        x ? c.lineTo(left + x, y) : c.moveTo(left, y);
       }
       c.stroke();
     }
+    c.fillStyle = "#879780";
+    c.font = "8px monospace";
+    c.textAlign = "right";
+    c.fillText(
+      `${this.window.durationMs.toFixed(1)} ms · shared ${triggered ? "A edge" : "clock"}`,
+      right,
+      h - 5,
+    );
+    c.textAlign = "left";
   }
 }

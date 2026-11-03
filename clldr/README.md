@@ -2,9 +2,15 @@
 
 A disposable, standalone browser sound laboratory for Zero Width. Two oscillators generate sound through multiplication, polarity switching, or sign-bit XOR. There is no conventional synth voice feeding a ring-modulation effect.
 
+## Current corrective rebuild — Stage A
+
+The instrument opens at provisional **A2 / 110 Hz**, with two 270° tuning rings, **Shape + Bias** banks and a central, real A / raw RESULT / B visualiser. Hold **Trigger**, or choose **Sequence / Drone → Play**; Play becomes Stop. Melody enables the existing four-note pattern. Octave −2…+2 transposes the played reference. Advanced and Chaos are collapsed; coupling comparisons, fine tuning and lab facilities remain available there.
+
+See [CORRECTIVE-STAGE-A.md](CORRECTIVE-STAGE-A.md) for the completed scope, pitch/display semantics, verification and limitations. The two-envelope/LFO/matrix work and post-processing removals are Stage B, still pending; this pass retains the existing DSP apart from the reference-octave calculation. No human listening calibration is claimed.
+
 ## Audition-led discovery
 
-The current brief treats all patches and control placements as provisional. Start with [DISCOVERY-AUDITION.md](DISCOVERY-AUDITION.md): code audit, neutral/reference recipes, isolated A/B procedure and prioritised comparisons. Numeric values beside lab sliders are editable; the comparison panel now reports which snapshot settings differ. Use [LISTENING-LOG.md](LISTENING-LOG.md) to record actual listening, with classifications initially Untested. The lab header now has the approved clean held Trigger, Drone/Sequence, Play→Stop and Melody, while older gate actions remain in collapsed legacy lab tools; no new filter, MOD envelope, final knob deck or shared ZW performance/saving architecture is implied.
+The current brief treats all patches and control placements as provisional. Start with [DISCOVERY-AUDITION.md](DISCOVERY-AUDITION.md): code audit, neutral/reference recipes, isolated A/B procedure and prioritised comparisons. Numeric values beside rotary controls are editable; the comparison panel now reports which snapshot settings differ. Use [LISTENING-LOG.md](LISTENING-LOG.md) to record actual listening, with classifications initially Untested. The lab header now has the approved clean held Trigger, Drone/Sequence, Play→Stop and Melody, while older gate actions remain in collapsed legacy lab tools; no new filter, MOD envelope or shared ZW performance/saving architecture is implied.
 
 ## Collision listening experiment
 

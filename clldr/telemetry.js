@@ -14,7 +14,7 @@ export const FIELDS = [
   "interaction",
   "loopInput",
 ];
-export const HISTORY = 2048;
+export const HISTORY = 8192;
 export class History {
   constructor(size = HISTORY) {
     this.size = size;

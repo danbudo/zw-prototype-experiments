@@ -3,8 +3,10 @@ import { presets } from "./presets.js";
 import { estimatePitch, pitchLabel } from "./analysis.js";
 import { CollisionView } from "./collision-view.js";
 import { configurationDifferences } from "./comparison.js";
+import { knob, segments } from "./controls.js";
+import { referenceHz, nominalHz } from "./pitch.js";
 const $ = (s) => document.querySelector(s);
-let config = structuredClone(presets.pure),
+let config = structuredClone(presets.initialise),
   ctx,
   node,
   analyser,
@@ -18,6 +20,7 @@ let config = structuredClone(presets.pure),
   audioInitialising = null,
   playbackRequest = 0;
 const controls = [];
+let mechanismControl, octaveControl, trackingControl;
 let auditionMode = "sequence",
   momentaryDown = false,
   playPending = false;
@@ -141,7 +144,7 @@ $("#audition-play").onclick = async () => {
   }
 };
 function refreshCoupling() {
-  $("#mechanism").value = config.coupling;
+  mechanismControl?.set(config.coupling);
   $("#collision").value = config.fm;
   $("#collision-value").value = config.fm / 10;
   const depth = couplingDepth(config),
@@ -198,69 +201,145 @@ function slider(
   unit = "",
   osc = null,
   divider = false,
+  size = "small",
 ) {
-  const el = document.createElement("div");
-  el.className = "control" + (divider ? " divider" : "");
   const id = (osc ? osc + "-" : "") + key;
-  const name = osc ? `Oscillator ${osc.toUpperCase()} ${label}` : label;
-  el.innerHTML = `<label for="${id}">${label}</label><input id="${id}" type="range" min="${min}" max="${max}" step="${step}" aria-label="${name}"><span class="exact-value"><input id="${id}-exact" type="number" min="${min}" max="${max}" step="any" aria-label="${name} exact value"><span>${unit}</span></span>`;
-  const input = el.querySelector("input[type=range]"),
-    editor = el.querySelector("input[type=number]");
-  const refresh = () => {
-    const value = (osc ? config[osc] : config)[key];
-    input.value = value;
-    editor.value = value;
-  };
-  input.oninput = () => {
-    (osc ? config[osc] : config)[key] = Number(input.value);
-    changed();
-    refresh();
-    refreshCoupling();
-  };
-  editor.onchange = () => {
-    if (editor.value.trim() === "" || !Number.isFinite(editor.valueAsNumber)) {
+  const control = knob($(parent), {
+    id,
+    label: osc ? `${osc.toUpperCase()} ${label}` : label,
+    min,
+    max,
+    step,
+    unit,
+    size,
+    log:
+      min > 0 &&
+      ["ratio", "attack", "decay", "release", "sweepTime"].includes(key),
+    onChange: (value) => {
+      (osc ? config[osc] : config)[key] = value;
+      if (key === "tune") resetLock();
+      changed();
       refresh();
-      message(
-        "Enter a finite numeric value; the previous setting was retained.",
-      );
-      return;
-    }
-    (osc ? config[osc] : config)[key] = editor.valueAsNumber;
-    changed();
-    refresh();
-    refreshCoupling();
-  };
-  editor.onkeydown = (e) => {
-    if (e.key === "Enter") {
-      e.preventDefault();
-      editor.blur();
-    }
-  };
-  controls.push(refresh);
-  $(parent).append(el);
+    },
+  });
+  controls.push(() => control.set((osc ? config[osc] : config)[key]));
+  return control;
 }
 for (const id of ["a", "b"]) {
-  const parent = "#osc-" + id;
-  $(parent).innerHTML =
-    `<p class="eyebrow">${id === "a" ? "01" : "03"} / SOURCE ${id.toUpperCase()}</p><h2>Oscillator ${id.toUpperCase()}<span>INDEPENDENT VOICE</span></h2><select id="${id}-wave" aria-label="Oscillator ${id.toUpperCase()} waveform"><option value="sine">Sine / sinusoidal</option><option value="triangle">Triangle / folded slope</option><option value="saw">Saw / ramp</option><option value="square">Square / pulse</option></select>`;
-  $("#" + id + "-wave").onchange = (e) => {
-    config[id].wave = e.target.value;
-    changed();
-  };
-  controls.push(() => ($("#" + id + "-wave").value = config[id].wave));
+  const parent = $("#osc-" + id);
+  parent.innerHTML = `<div class="source-heading"><span>OSC ${id.toUpperCase()}</span><output id="${id}-nominal"></output></div>`;
+  slider(
+    "#osc-" + id,
+    "ratio",
+    "Tuning",
+    0.125,
+    8,
+    0.001,
+    "×",
+    id,
+    false,
+    "tuning",
+  );
+  const wave = segments(parent, {
+    id: id + "-wave",
+    label: `Oscillator ${id.toUpperCase()} waveform`,
+    choices: [
+      ["sine", "Sine"],
+      ["triangle", "Triangle"],
+      ["saw", "Saw"],
+      ["square", "Square"],
+    ],
+    onChange: (value) => {
+      config[id].wave = value;
+      changed();
+      refresh();
+    },
+  });
+  controls.push(() => wave.set(config[id].wave));
+  slider(
+    "#bank-controls-" + id,
+    "shape",
+    "Shape",
+    -0.85,
+    0.85,
+    0.01,
+    "",
+    id,
+    false,
+    "medium",
+  );
+  slider(
+    "#bank-controls-" + id,
+    "dc",
+    "Bias",
+    -0.8,
+    0.8,
+    0.01,
+    "",
+    id,
+    false,
+    "medium",
+  );
   for (const args of [
-    ["ratio", "Ratio", 0.125, 8, 0.001, "×"],
     ["detune", "Detune", -100, 100, 1, " ct"],
-    ["offset", "Freq. offset", -1000, 1000, 1, " Hz"],
+    ["offset", "Hz offset", -1000, 1000, 1, " Hz"],
     ["tracking", "Key tracking", 0, 1, 0.01, ""],
     ["phase", "Phase", 0, 360, 1, "°"],
-    ["shape", "Shape / duty", -0.85, 0.85, 0.01, ""],
-    ["dc", "DC bias", -0.8, 0.8, 0.01, ""],
-    ["sweep", "Pitch sweep", -48, 48, 0.1, " st"],
-    ["sweepTime", "Sweep decay", 0.005, 4, 0.005, " s"],
+    ["sweep", "Legacy pitch sweep", -48, 48, 0.1, " st"],
+    ["sweepTime", "Legacy sweep time", 0.005, 4, 0.005, " s"],
   ])
-    slider(parent, ...args, id, args[0] === "sweep");
+    slider("#fine-" + id, ...args, id);
 }
+mechanismControl = segments($("#mechanism-control"), {
+  id: "mechanism",
+  label: "Coupling mechanism",
+  choices: [
+    ["original", "Original FM"],
+    ["normalised", "Relative FM"],
+    ["pm", "Mutual PM"],
+  ],
+  onChange: (value) => {
+    config.coupling = value;
+    resetLock();
+    changed();
+    refresh();
+  },
+});
+octaveControl = segments($("#octave-control"), {
+  id: "root-octave",
+  label: "Relative root octave",
+  choices: [
+    ["-2", "−2"],
+    ["-1", "−1"],
+    ["0", "0"],
+    ["1", "+1"],
+    ["2", "+2"],
+  ],
+  onChange: (value) => {
+    config.rootOctave = Number(value);
+    resetLock();
+    changed();
+    refresh();
+  },
+});
+trackingControl = segments($("#tracking-control"), {
+  id: "keyboard-tracking",
+  label: "Keyboard tracking",
+  choices: [
+    ["off", "Off"],
+    ["a", "A"],
+    ["b", "B"],
+    ["both", "Both"],
+  ],
+  onChange: (value) => {
+    config.a.tracking = value === "a" || value === "both" ? 1 : 0;
+    config.b.tracking = value === "b" || value === "both" ? 1 : 0;
+    changed();
+    refresh();
+  },
+});
+slider("#header-output", "volume", "Output", 0, 0.85, 0.01, "");
+slider("#calibration", "tune", "Master tune", -100, 100, 1, " ct");
 slider("#coupling", "feedback", "Result feedback", 0, 0.94, 0.01);
 slider("#scaling", "curve", "Curve exponent", 0.25, 4, 0.05);
 slider("#scaling", "hzRange", "FM range", 0, 4000, 1, " Hz");
@@ -268,15 +347,6 @@ slider("#scaling", "relativeRange", "Relative range", 0, 8, 0.01, "×");
 slider("#scaling", "phaseRange", "PM range", 0, 4, 0.01, " cyc");
 slider("#repeat-rate", "auditionRate", "Notes / second", 0.25, 8, 0.05, " Hz");
 slider("#level-trim", "trim", "Listening trim", -24, 0, 0.1, " dB");
-$("#mechanism").onchange = (e) => {
-  config.coupling = e.target.value;
-  resetLock();
-  changed();
-  refreshCoupling();
-  message(
-    "Coupling mechanism changed; oscillator settings and Collision position preserved.",
-  );
-};
 $("#collision").oninput = (e) => {
   config.fm = Number(e.target.value);
   changed();
@@ -391,14 +461,14 @@ for (const a of [
   ["sustain", "Sustain", 0, 1, 0.01, ""],
   ["release", "Release", 0.01, 8, 0.01, " s"],
 ])
-  slider("#envelope", ...a);
+  slider("#envelope", ...a, null, false, "medium");
 for (const a of [
   ["grit", "Drive + drift", 0, 1, 0.01, ""],
   ["asymmetry", "Asymmetry", -0.8, 0.8, 0.01, ""],
   ["leak", "Source leakage", 0, 0.3, 0.01, ""],
   ["noise", "Noise floor", 0, 0.15, 0.001, ""],
 ])
-  slider("#circuit", ...a);
+  slider("#circuit", ...a, null, false, "medium");
 function resetLock() {
   lock = 0;
   send("lock", 0);
@@ -411,11 +481,30 @@ function refresh() {
   controls.forEach((f) => f());
   for (const k of ["note", "tune", "volume"]) $("#" + k).value = config[k];
   for (const k of ["drone", "sync"]) $("#" + k).checked = config[k];
-  $("#tune-value").textContent = config.tune + " ct";
-  $("#volume-value").textContent = Math.round(config.volume * 100) + "%";
-  $("#note-name").textContent = pitchLabel(
-    440 * 2 ** ((config.note - 69) / 12),
-  ).name;
+  $("#note-name").textContent =
+    `${pitchLabel(referenceHz(config)).name} / ${referenceHz(config).toFixed(1)} Hz`;
+  octaveControl.set(config.rootOctave);
+  const a = config.a.tracking,
+    b = config.b.tracking;
+  const tracking =
+    a === 1 && b === 1
+      ? "both"
+      : a === 0 && b === 0
+        ? "off"
+        : a === 1 && b === 0
+          ? "a"
+          : a === 0 && b === 1
+            ? "b"
+            : "custom";
+  trackingControl.set(tracking);
+  $("#tracking-note").textContent = tracking === "custom" ? "partial" : "";
+  for (const id of ["a", "b"])
+    $("#" + id + "-nominal").textContent =
+      nominalHz(config, id).toFixed(2) + " Hz nominal";
+  const fa = nominalHz(config, "a"),
+    fb = nominalHz(config, "b");
+  $("#relationship").textContent =
+    fa > 0 && fb > 0 ? `B/A ${(fb / fa).toFixed(4)}× nominal` : "B/A —";
   refreshTransport();
   document
     .querySelectorAll("[data-mode]")
@@ -689,7 +778,7 @@ $("#file").onchange = async (e) => {
 $("#pitch-lock").onchange = resetLock;
 refresh();
 refreshComparison();
-document.querySelector('[data-preset="pure"]').classList.add("selected");
+document.querySelector('[data-preset="initialise"]').classList.add("selected");
 const time = new Float32Array(8192),
   freq = new Float32Array(4096);
 let pitch = null;
@@ -753,6 +842,11 @@ function frame(now) {
   if (analyser) {
     analyser.getFloatTimeDomainData(time);
     analyser.getFloatFrequencyData(freq);
+    let recentPeak = 0;
+    for (let i = time.length - 1024; i < time.length; i++)
+      recentPeak = Math.max(recentPeak, Math.abs(time[i]));
+    $("#output-meter").value =
+      recentPeak > 1e-7 ? 20 * Math.log10(recentPeak) : -72;
     if (now - lastAnalysis > 180) {
       lastAnalysis = now;
       let peak = 0,
@@ -779,8 +873,7 @@ function frame(now) {
         $("#needle").style.left =
           50 + Math.max(-50, Math.min(50, info.cents)) + "%";
         if ($("#pitch-lock").checked) {
-          const target =
-              440 * 2 ** ((config.note - 69) / 12 + config.tune / 1200),
+          const target = referenceHz(config),
             error = 1200 * Math.log2(target / pitch.hz);
           if (pitch.confidence > 0.92 && Math.abs(error) < 350) {
             lock = Math.max(-200, Math.min(200, lock + error * 0.08));
@@ -801,7 +894,7 @@ function frame(now) {
       }
     }
   }
-  collisionView.draw(config.fm / 1000);
+  collisionView.draw(config.fm / 1000, config.mode);
   draw($("#scope"), "scope");
   draw($("#spectrum"), "spectrum");
 }

@@ -85,6 +85,7 @@ async function open() {
     };
   });
   await page.goto(process.env.CLLDR_TEST_URL || "http://127.0.0.1:8000");
+  await page.locator("#advanced > summary").click();
   await page.locator("#legacy-audition > summary").click();
   return page;
 }
@@ -185,7 +186,7 @@ try {
     audio: window.repeatProbe.audio,
     notes: window.repeatProbe.telemetry,
   }));
-  for (const note of [57, 69, 45, 64])
+  for (const note of [45, 57, 33, 52])
     assert.ok(
       sequence.notes.some(
         (packet) =>
@@ -304,6 +305,7 @@ try {
   const lab = await open();
   await lab.locator("#legacy-audition > summary").click();
   await lab.locator('[data-preset="initialise"]').click();
+  await lab.locator("#momentary-trigger").scrollIntoViewIfNeeded();
   const trigger = lab.locator("#momentary-trigger"),
     box = await trigger.boundingBox();
   await lab.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
@@ -376,7 +378,7 @@ try {
     audio: window.repeatProbe.audio,
     notes: window.repeatProbe.telemetry,
   }));
-  for (const note of [57, 69, 45, 64])
+  for (const note of [45, 57, 33, 52])
     assert.ok(
       melody.notes.some(
         (packet) =>
