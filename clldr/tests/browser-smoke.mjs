@@ -27,6 +27,20 @@ try {
     };
   });
   await page.goto(process.env.CLLDR_TEST_URL || "http://127.0.0.1:8000");
+  assert.equal(
+    await page.locator("#legacy-audition").evaluate((el) => el.open),
+    false,
+  );
+  assert.equal(
+    await page
+      .locator(".discovery-header")
+      .evaluate(
+        (el) => getComputedStyle(el).gridTemplateColumns.split(" ").length,
+      ),
+    3,
+  );
+  await page.locator("#legacy-audition > summary").click();
+  await page.locator("#lab-configurations > summary").click();
   await page.locator("#power").click();
   await page.waitForFunction(() =>
     document.querySelector("#power").textContent.includes("enabled"),
@@ -53,6 +67,46 @@ try {
   }
   await page.locator('[data-preset="initialise"]').click();
   assert.equal(await page.locator("#feedback").inputValue(), "0");
+  // Discovery: exact one-variable tests must reveal accidental confounds.
+  const exact = async (id, value) => {
+    await page.locator("#" + id).fill(String(value));
+    await page.locator("#" + id).press("Tab");
+  };
+  await page.locator("#store").click();
+  await page.locator("#slot-b").click();
+  await exact("a-ratio-exact", 1.0001);
+  assert.match(
+    await page.locator("#comparison-summary").textContent(),
+    /1 setting differ/,
+  );
+  assert.match(
+    await page.locator("#comparison-diff").textContent(),
+    /a.ratio: A = 1; B = 1.0001/,
+  );
+  assert.equal((await download("#save")).config.a.ratio, 1.0001);
+  await exact("a-ratio-exact", "");
+  assert.equal(await page.locator("#a-ratio-exact").inputValue(), "1.0001");
+  await exact("a-detune-exact", 1000);
+  assert.equal(await page.locator("#a-detune-exact").inputValue(), "100");
+  await exact("collision-value", 0.125);
+  assert.equal((await download("#save")).config.fm, 1.25);
+  assert.match(
+    await page.locator("#comparison-summary").textContent(),
+    /3 settings differ/,
+  );
+  await exact("collision-value", 101);
+  assert.equal(await page.locator("#collision-value").inputValue(), "100");
+  await page.locator("#store").click();
+  assert.match(
+    await page.locator("#comparison-summary").textContent(),
+    /settings identical/,
+  );
+  await page.locator('[data-preset="initialise"]').click();
+  await page.locator("#store").click();
+  await page.locator("#slot-a").click();
+  console.log(
+    "discovery: precise edits isolate one setting, invalid values restore/clamp, snapshot diffs reveal confounds",
+  );
   await range("collision", 150);
   let oscillatorSettings;
   for (const coupling of ["original", "normalised", "pm"]) {
@@ -99,7 +153,7 @@ try {
   );
   console.log("telemetry pool continues beyond three packets");
   await page.locator("#hold").click();
-  await page.locator("summary").click();
+  await page.locator(".scaling > summary").click();
   await range("curve", 2);
   await range("phaseRange", 0.12);
   await range("trim", -2);
@@ -196,6 +250,14 @@ try {
   await page.waitForTimeout(1000);
   assert.ok((await level()) < 0.0001);
   await page.setViewportSize({ width: 390, height: 844 });
+  assert.equal(
+    await page
+      .locator(".discovery-header")
+      .evaluate(
+        (el) => getComputedStyle(el).gridTemplateColumns.split(" ").length,
+      ),
+    1,
+  );
   await page.screenshot({
     path: "/tmp/clldr-experiment-mobile.png",
     fullPage: true,

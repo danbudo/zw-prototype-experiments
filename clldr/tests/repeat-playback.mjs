@@ -85,6 +85,7 @@ async function open() {
     };
   });
   await page.goto(process.env.CLLDR_TEST_URL || "http://127.0.0.1:8000");
+  await page.locator("#legacy-audition > summary").click();
   return page;
 }
 const range = (page, id, value) =>
@@ -298,6 +299,170 @@ try {
   await direct.close();
   console.log(
     "Repeat also starts audio directly; Stop cancels active playback reliably",
+  );
+  // Authorised discovery transport: actual clean press/release and Play/Stop.
+  const lab = await open();
+  await lab.locator("#legacy-audition > summary").click();
+  await lab.locator('[data-preset="initialise"]').click();
+  const trigger = lab.locator("#momentary-trigger"),
+    box = await trigger.boundingBox();
+  await lab.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
+  await lab.mouse.down();
+  await lab.waitForFunction(() => window.repeatProbe.moduleWaiting);
+  await release(lab);
+  await lab.waitForTimeout(350);
+  assert.equal(await trigger.getAttribute("aria-pressed"), "true");
+  assert.ok(
+    await lab.evaluate(() =>
+      window.repeatProbe.commands.some(
+        (x) => x.type === "clean-on" && x.value.sustain === true,
+      ),
+    ),
+  );
+  assert.ok(
+    await lab.evaluate(() =>
+      window.repeatProbe.audio.slice(-10).some((x) => x.peak > 0.01),
+    ),
+    "held Trigger must sound beyond the old 180 ms pulse",
+  );
+  await lab.mouse.move(2, 2);
+  await lab.mouse.up();
+  assert.equal(await trigger.getAttribute("aria-pressed"), "false");
+  await assertSilent(lab);
+  await trigger.focus();
+  await lab.keyboard.down("Space");
+  await lab.waitForTimeout(250);
+  assert.equal(await trigger.getAttribute("aria-pressed"), "true");
+  await lab.keyboard.up("Space");
+  await assertSilent(lab);
+  await trigger.focus();
+  await lab.keyboard.down("Enter");
+  await lab.waitForTimeout(100);
+  await lab.locator("#note").focus();
+  await lab.keyboard.up("Enter");
+  assert.equal(await trigger.getAttribute("aria-pressed"), "false");
+  await assertSilent(lab);
+  console.log(
+    "new Trigger: clean held audio, pointer release outside, keyboard release and blur cancellation verified",
+  );
+  await range(lab, "attack", 0.002);
+  await range(lab, "decay", 0.08);
+  await range(lab, "sustain", 0);
+  await range(lab, "release", 0.04);
+  await range(lab, "auditionRate", 2);
+  await lab.evaluate(() => (window.repeatProbe.audio = []));
+  await lab.locator("#audition-play").click();
+  await lab.waitForTimeout(1750);
+  assert.equal(await lab.locator("#audition-play").textContent(), "Stop");
+  const playing = await lab.evaluate(() => window.repeatProbe.audio);
+  const attacks = [];
+  let was = false;
+  for (const frame of playing) {
+    const active = frame.peak > 0.005;
+    if (active && !was) attacks.push(frame.time);
+    was = active;
+  }
+  assert.ok(attacks.length >= 3);
+  for (let i = 1; i < attacks.length; i++)
+    assert.ok(Math.abs(attacks[i] - attacks[i - 1] - 0.5) < 0.04);
+  await range(lab, "auditionRate", 4);
+  await lab.locator("#sequence").check();
+  await lab.evaluate(() => {
+    window.repeatProbe.audio = [];
+    window.repeatProbe.telemetry = [];
+  });
+  await lab.waitForTimeout(1400);
+  const melody = await lab.evaluate(() => ({
+    audio: window.repeatProbe.audio,
+    notes: window.repeatProbe.telemetry,
+  }));
+  for (const note of [57, 69, 45, 64])
+    assert.ok(
+      melody.notes.some(
+        (packet) =>
+          packet.note === note &&
+          melody.audio.some(
+            (frame) =>
+              Math.abs(frame.time - packet.time) < 0.06 && frame.peak > 0.005,
+          ),
+      ),
+    );
+  await lab.locator("#mode-drone").click();
+  assert.equal(await lab.locator("#audition-play").textContent(), "Play");
+  assert.equal(
+    await lab.locator("#mode-drone").getAttribute("aria-pressed"),
+    "true",
+  );
+  await assertSilent(lab);
+  await lab.locator('[data-preset="initialise"]').click();
+  await range(lab, "release", 0.04);
+  await lab.locator("#audition-play").click();
+  await lab.waitForTimeout(300);
+  assert.equal(await lab.locator("#audition-play").textContent(), "Stop");
+  assert.ok(
+    await lab.evaluate(() =>
+      window.repeatProbe.audio.slice(-10).some((x) => x.peak > 0.01),
+    ),
+  );
+  await range(lab, "release", 8);
+  await lab.locator("#audition-play").click();
+  await lab.evaluate(() => (window.repeatProbe.commands = []));
+  await lab.locator("#audition-play").click();
+  await lab.waitForTimeout(50);
+  assert.ok(
+    await lab.evaluate(() =>
+      window.repeatProbe.commands.some((x) => x.type === "on"),
+    ),
+    "Drone Play must start a note during a previous long release",
+  );
+  await range(lab, "release", 0.04);
+  await lab.locator("#audition-play").click();
+  assert.equal(await lab.locator("#audition-play").textContent(), "Play");
+  await assertSilent(lab);
+  await lab.close();
+  console.log(
+    "new header: Sequence timing, four Melody pitches, stop-before-mode-change and Drone Play/Stop verified",
+  );
+  const pending = await open();
+  await pending.locator("#legacy-audition > summary").click();
+  await pending.locator('[data-preset="initialise"]').click();
+  await pending.locator("#audition-play").click();
+  await pending.waitForFunction(() => window.repeatProbe.moduleWaiting);
+  assert.equal(await pending.locator("#audition-play").textContent(), "Stop");
+  await pending.locator("#audition-play").click();
+  await release(pending);
+  await assertSilent(pending);
+  assert.equal(
+    await pending.evaluate(() =>
+      window.repeatProbe.commands.some(
+        (x) => x.type === "audition" && x.value === true,
+      ),
+    ),
+    false,
+  );
+  await pending.close();
+  const lifted = await open();
+  await lifted.locator("#legacy-audition > summary").click();
+  await lifted.locator("#momentary-trigger").scrollIntoViewIfNeeded();
+  const early = await lifted.locator("#momentary-trigger").boundingBox();
+  await lifted.mouse.move(
+    early.x + early.width / 2,
+    early.y + early.height / 2,
+  );
+  await lifted.mouse.down();
+  await lifted.waitForFunction(() => window.repeatProbe.moduleWaiting);
+  await lifted.mouse.up();
+  await release(lifted);
+  await assertSilent(lifted);
+  assert.equal(
+    await lifted.evaluate(() =>
+      window.repeatProbe.commands.some((x) => x.type === "clean-on"),
+    ),
+    false,
+  );
+  await lifted.close();
+  console.log(
+    "new header: pending Play and early Trigger release cannot escape audio-loading cancellation",
   );
 } finally {
   await browser.close();

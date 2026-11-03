@@ -626,3 +626,201 @@ footer p {
     width: 100%;
   }
 }
+/* Laboratory discovery aids; not the final ZW control inventory. */
+.control {
+  grid-template-columns: 94px minmax(35px, 1fr) 100px;
+}
+.exact-value {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 3px;
+  font: 10px monospace;
+}
+.exact-value input {
+  min-width: 0;
+  width: 67px;
+  padding: 5px 3px;
+  background: #171d16;
+  color: var(--text);
+  border: 1px solid var(--line);
+  border-radius: 3px;
+  font: 11px monospace;
+}
+.exact-value > span {
+  white-space: nowrap;
+}
+.interaction .control {
+  grid-template-columns: 70px minmax(30px, 1fr) 90px;
+}
+.scaling .control {
+  grid-template-columns: 90px minmax(30px, 1fr) 90px;
+}
+.collision-exact {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+.collision-exact input {
+  width: 82px;
+  min-width: 0;
+  border: 1px solid var(--line);
+  border-radius: 3px;
+  background: #171d16;
+  padding: 5px;
+  color: var(--lime);
+  font: 15px monospace;
+}
+.comparison-readout {
+  margin-top: 17px;
+  font: 11px/1.6 monospace;
+  color: var(--muted);
+}
+.comparison-readout summary {
+  cursor: pointer;
+  color: var(--lime);
+}
+.comparison-readout ul {
+  padding-left: 18px;
+  overflow-wrap: anywhere;
+}
+@media (max-width: 620px) {
+  .control {
+    grid-template-columns: 94px minmax(25px, 1fr) 95px;
+  }
+  .interaction .control,
+  .scaling .control {
+    grid-template-columns: 85px minmax(25px, 1fr) 95px;
+  }
+}
+/* Lab-only audition header. No final fascia or medium-knob deck is implied. */
+.discovery-header {
+  display: grid;
+  grid-template-columns: 1.25fr 0.85fr 1.2fr;
+  gap: 22px;
+  margin-bottom: 18px;
+  padding: 18px 20px;
+}
+.header-column {
+  min-width: 0;
+}
+.header-column + .header-column {
+  border-left: 1px solid var(--line);
+  padding-left: 20px;
+}
+.header-column .eyebrow {
+  margin-bottom: 12px;
+}
+.audition-actions,
+.audition-modes {
+  display: flex;
+  gap: 5px;
+  align-items: center;
+  flex-wrap: wrap;
+}
+.audition-actions button {
+  padding: 9px;
+}
+.header-column .tune {
+  margin: 12px 0;
+  display: flex;
+}
+.header-column .tune input[type="range"] {
+  flex: 1;
+}
+.header-column .control {
+  grid-template-columns: 90px minmax(30px, 1fr) 95px;
+}
+.header-column .check {
+  margin-top: 8px;
+}
+.header-column .slots {
+  display: flex;
+  flex-wrap: wrap;
+  margin: 7px 0;
+}
+.header-column .slots button {
+  padding: 7px;
+  font-size: 11px;
+}
+.header-column .slots #store {
+  flex-basis: 100%;
+}
+.header-column .file-actions button {
+  padding: 6px;
+  font-size: 10px;
+}
+.header-column details {
+  font-size: 10px;
+  margin-top: 10px;
+}
+.header-column details summary {
+  cursor: pointer;
+  color: var(--muted);
+}
+.header-column .preset-list {
+  margin-top: 8px;
+}
+.reference-note {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font: 11px monospace;
+  color: var(--muted);
+}
+.reference-note input {
+  width: 64px;
+  min-width: 0;
+  padding: 6px;
+  color: var(--text);
+  background: #171d16;
+  border: 1px solid var(--line);
+  border-radius: 3px;
+}
+.reference-note output {
+  color: var(--lime);
+}
+.small-hint {
+  font: 9px monospace;
+  color: var(--muted);
+}
+.discovery-header #message {
+  grid-column: 1/-1;
+  margin: 0;
+  padding: 0;
+  min-height: 0;
+  line-height: 1.5;
+}
+.legacy-audition {
+  margin-top: 18px;
+}
+.legacy-audition summary {
+  cursor: pointer;
+  color: var(--muted);
+  font: 12px monospace;
+}
+.legacy-actions {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+  margin-top: 15px;
+}
+#momentary-trigger {
+  border-color: var(--lime);
+}
+@media (max-width: 1050px) {
+  .discovery-header {
+    grid-template-columns: 1fr;
+  }
+  .header-column + .header-column {
+    border-left: 0;
+    border-top: 1px solid var(--line);
+    padding: 14px 0 0;
+  }
+  .header-column .slots #store {
+    flex-basis: auto;
+  }
+  .header-column .tune input[type="range"] {
+    max-width: 280px;
+  }
+}

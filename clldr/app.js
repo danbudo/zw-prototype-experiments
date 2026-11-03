@@ -2,6 +2,7 @@ import { defaults, sanitize, couplingDepth } from "./dsp.js";
 import { presets } from "./presets.js";
 import { estimatePitch, pitchLabel } from "./analysis.js";
 import { CollisionView } from "./collision-view.js";
+import { configurationDifferences } from "./comparison.js";
 const $ = (s) => document.querySelector(s);
 let config = structuredClone(presets.pure),
   ctx,
@@ -17,6 +18,9 @@ let config = structuredClone(presets.pure),
   audioInitialising = null,
   playbackRequest = 0;
 const controls = [];
+let auditionMode = "sequence",
+  momentaryDown = false,
+  playPending = false;
 let auditioning = false,
   latestRMS = 0,
   referenceRMS = 0;
@@ -29,13 +33,117 @@ function stopAudition() {
   playbackRequest++;
   if (auditioning) send("audition", false);
   auditioning = false;
+  playPending = false;
   $("#repeat").setAttribute("aria-pressed", "false");
   $("#pitch-lock").disabled = false;
+  refreshTransport();
 }
+function refreshTransport() {
+  if (config.drone) auditionMode = "drone";
+  else if (auditioning) auditionMode = "sequence";
+  const running = auditioning || config.drone || held || playPending;
+  $("#audition-play").textContent = running ? "Stop" : "Play";
+  $("#audition-play").setAttribute("aria-pressed", String(running));
+  $("#audition-play").setAttribute("aria-busy", String(playPending));
+  $("#mode-drone").setAttribute(
+    "aria-pressed",
+    String(auditionMode === "drone"),
+  );
+  $("#mode-sequence").setAttribute(
+    "aria-pressed",
+    String(auditionMode === "sequence"),
+  );
+  $("#momentary-trigger").setAttribute("aria-pressed", String(momentaryDown));
+}
+function releaseMomentary() {
+  if (!momentaryDown) return;
+  momentaryDown = false;
+  playbackRequest++;
+  send("off");
+  refreshTransport();
+}
+function pressMomentary() {
+  if (momentaryDown) return;
+  $("#stop").click();
+  momentaryDown = true;
+  refreshTransport();
+  safely(() => {
+    if (momentaryDown) {
+      resetLock();
+      send("clean-on", { sustain: true });
+      message("Clean Trigger held. Release to close the gate.");
+    }
+  });
+}
+const triggerButton = $("#momentary-trigger");
+triggerButton.onpointerdown = (e) => {
+  if (e.button !== 0) return;
+  e.preventDefault();
+  triggerButton.focus();
+  triggerButton.setPointerCapture(e.pointerId);
+  pressMomentary();
+};
+triggerButton.onpointerup = releaseMomentary;
+triggerButton.onpointercancel = releaseMomentary;
+triggerButton.onlostpointercapture = releaseMomentary;
+triggerButton.onkeydown = (e) => {
+  if (e.code === "Space" || e.code === "Enter") {
+    e.preventDefault();
+    if (!e.repeat) pressMomentary();
+  }
+};
+triggerButton.onkeyup = (e) => {
+  if (e.code === "Space" || e.code === "Enter") {
+    e.preventDefault();
+    releaseMomentary();
+  }
+};
+triggerButton.onblur = releaseMomentary;
+for (const mode of ["drone", "sequence"])
+  $("#mode-" + mode).onclick = () => {
+    if (auditionMode === mode) return;
+    $("#stop").click();
+    auditionMode = mode;
+    refreshTransport();
+    message(
+      `${mode === "drone" ? "Drone" : "Sequence"} selected; playback stopped. Press Play to audition.`,
+    );
+  };
+$("#audition-play").onclick = async () => {
+  releaseMomentary();
+  if (auditioning || config.drone || held || playPending) {
+    $("#stop").click();
+    return;
+  }
+  playPending = true;
+  refreshTransport();
+  try {
+    if (auditionMode === "sequence") await $("#repeat").onclick();
+    else
+      await safely(() => {
+        stopAudition();
+        clearTimeout(timer);
+        held = false;
+        $("#hold").setAttribute("aria-pressed", "false");
+        config.drone = true;
+        changed();
+        // Start immediately even during an older release: use the existing legacy
+        // note-on, retaining loop/filter history rather than a clean DSP reset.
+        send("on");
+        refresh();
+        message(
+          "Drone playing. Stop releases the gate; Trigger starts a clean note.",
+        );
+      });
+  } finally {
+    playPending = false;
+    refreshTransport();
+  }
+};
 function refreshCoupling() {
   $("#mechanism").value = config.coupling;
   $("#collision").value = config.fm;
-  $("#collision-value").textContent = (config.fm / 10).toFixed(1) + "%";
+  $("#collision-value").value = config.fm / 10;
   const depth = couplingDepth(config),
     unit =
       config.coupling === "original"
@@ -58,12 +166,26 @@ function message(s) {
 function send(type, value) {
   node?.port.postMessage({ type, value });
 }
+function refreshComparison() {
+  const differences = configurationDifferences(slots.a, slots.b);
+  $("#comparison-summary").textContent = differences.length
+    ? `Snapshot A ↔ B: ${differences.length} setting${differences.length === 1 ? "" : "s"} differ`
+    : "Snapshot A ↔ B: settings identical";
+  $("#comparison-diff").replaceChildren();
+  for (const difference of differences) {
+    const li = document.createElement("li");
+    li.textContent = `${difference.path}: A = ${difference.a}; B = ${difference.b}`;
+    $("#comparison-diff").append(li);
+  }
+}
 function changed() {
   config = sanitize(config);
   send("config", config);
   slots[active] = structuredClone(config);
+  refreshComparison();
+  refreshTransport();
   document
-    .querySelectorAll("#presets button")
+    .querySelectorAll("[data-preset]")
     .forEach((b) => b.classList.remove("selected"));
 }
 function slider(
@@ -80,21 +202,41 @@ function slider(
   const el = document.createElement("div");
   el.className = "control" + (divider ? " divider" : "");
   const id = (osc ? osc + "-" : "") + key;
-  el.innerHTML = `<label for="${id}">${label}</label><input id="${id}" type="range" min="${min}" max="${max}" step="${step}"><output for="${id}"></output>`;
-  const input = el.querySelector("input"),
-    output = el.querySelector("output");
-  const format = (v) =>
-    `${Number(v).toFixed(step < 0.01 ? 3 : step < 1 ? 2 : 0)}${unit}`;
+  const name = osc ? `Oscillator ${osc.toUpperCase()} ${label}` : label;
+  el.innerHTML = `<label for="${id}">${label}</label><input id="${id}" type="range" min="${min}" max="${max}" step="${step}" aria-label="${name}"><span class="exact-value"><input id="${id}-exact" type="number" min="${min}" max="${max}" step="any" aria-label="${name} exact value"><span>${unit}</span></span>`;
+  const input = el.querySelector("input[type=range]"),
+    editor = el.querySelector("input[type=number]");
+  const refresh = () => {
+    const value = (osc ? config[osc] : config)[key];
+    input.value = value;
+    editor.value = value;
+  };
   input.oninput = () => {
     (osc ? config[osc] : config)[key] = Number(input.value);
-    output.textContent = format(input.value);
     changed();
+    refresh();
     refreshCoupling();
   };
-  controls.push(() => {
-    input.value = (osc ? config[osc] : config)[key];
-    output.textContent = format(input.value);
-  });
+  editor.onchange = () => {
+    if (editor.value.trim() === "" || !Number.isFinite(editor.valueAsNumber)) {
+      refresh();
+      message(
+        "Enter a finite numeric value; the previous setting was retained.",
+      );
+      return;
+    }
+    (osc ? config[osc] : config)[key] = editor.valueAsNumber;
+    changed();
+    refresh();
+    refreshCoupling();
+  };
+  editor.onkeydown = (e) => {
+    if (e.key === "Enter") {
+      e.preventDefault();
+      editor.blur();
+    }
+  };
+  controls.push(refresh);
   $(parent).append(el);
 }
 for (const id of ["a", "b"]) {
@@ -140,6 +282,25 @@ $("#collision").oninput = (e) => {
   changed();
   refreshCoupling();
 };
+$("#collision-value").onchange = (e) => {
+  const value = e.target.valueAsNumber;
+  if (e.target.value.trim() === "" || !Number.isFinite(value)) {
+    refreshCoupling();
+    message(
+      "Enter a finite Collision percentage; the previous setting was retained.",
+    );
+    return;
+  }
+  config.fm = value * 10;
+  changed();
+  refreshCoupling();
+};
+$("#collision-value").onkeydown = (e) => {
+  if (e.key === "Enter") {
+    e.preventDefault();
+    e.target.blur();
+  }
+};
 $("#sequence").onchange = (e) => {
   config.auditionSequence = e.target.checked;
   changed();
@@ -172,7 +333,7 @@ $("#repeat").onclick = () => {
     $("#pitch-lock").disabled = true;
     send("audition", true);
     message(
-      "Sample-clock repeat active. Each note resets DSP memory; pitch lock is disabled during repeat.",
+      "Sequence audition playing. Each note starts clean; Melody controls the temporary pitch pattern. Pitch lock is off.",
     );
   });
 };
@@ -238,12 +399,6 @@ for (const a of [
   ["noise", "Noise floor", 0, 0.15, 0.001, ""],
 ])
   slider("#circuit", ...a);
-for (let note = 24; note <= 96; note++) {
-  const opt = document.createElement("option");
-  opt.value = note;
-  opt.textContent = pitchLabel(440 * 2 ** ((note - 69) / 12)).name;
-  $("#note").append(opt);
-}
 function resetLock() {
   lock = 0;
   send("lock", 0);
@@ -258,6 +413,10 @@ function refresh() {
   for (const k of ["drone", "sync"]) $("#" + k).checked = config[k];
   $("#tune-value").textContent = config.tune + " ct";
   $("#volume-value").textContent = Math.round(config.volume * 100) + "%";
+  $("#note-name").textContent = pitchLabel(
+    440 * 2 ** ((config.note - 69) / 12),
+  ).name;
+  refreshTransport();
   document
     .querySelectorAll("[data-mode]")
     .forEach((b) =>
@@ -279,6 +438,7 @@ function apply(p, preserveGate = false) {
   if (!config.drone && ((wasDrone && !held) || (wasHeld && !preserveGate)))
     send("off");
   slots[active] = structuredClone(config);
+  refreshComparison();
 }
 for (const name of Object.keys(presets)) {
   const b = document.createElement("button");
@@ -291,23 +451,33 @@ for (const name of Object.keys(presets)) {
       resetLock();
     }
     document
-      .querySelectorAll("#presets button")
+      .querySelectorAll("[data-preset]")
       .forEach((x) => x.classList.toggle("selected", x === b));
     message(
       name === "drone"
-        ? "Drone opens the gate. Disable Drone or press Stop to release."
-        : `${name[0].toUpperCase() + name.slice(1)} loaded. Strike to audition.`,
+        ? "Drone configuration loaded; gate armed. Enable audio to hear it, or press Stop to release."
+        : `${name[0].toUpperCase() + name.slice(1)} loaded. Hold Trigger or press Play to audition.`,
     );
   };
-  $("#presets").append(b);
+  $(name === "initialise" ? "#initialise-slot" : "#presets").append(b);
 }
-for (const k of ["note", "tune", "volume"])
+for (const k of ["tune", "volume"])
   $("#" + k).oninput = (e) => {
     config[k] = Number(e.target.value);
     if (k !== "volume") resetLock();
     changed();
     refresh();
   };
+$("#note").onchange = (e) => {
+  if (!Number.isFinite(e.target.valueAsNumber)) {
+    refresh();
+    return;
+  }
+  config.note = Math.round(e.target.valueAsNumber);
+  resetLock();
+  changed();
+  refresh();
+};
 for (const k of ["drone", "sync"])
   $("#" + k).onchange = (e) => {
     if (k === "drone" && e.target.checked) stopAudition();
@@ -379,7 +549,7 @@ async function initialiseAudio() {
         ctx.state === "running" ? "Audio enabled ✓" : "Resume audio ↗";
     };
     message(
-      "Audio ready. Strike, Hold, or play Space. Start with a low listening volume.",
+      "Audio ready. Hold Trigger, or select Drone/Sequence and press Play. Start quietly.",
     );
   } catch (e) {
     await ctx.close();
@@ -391,7 +561,10 @@ async function safely(fn) {
   const request = fn ? ++playbackRequest : null;
   try {
     await enable();
-    if (fn && request === playbackRequest) fn();
+    if (fn && request === playbackRequest) {
+      fn();
+      refreshTransport();
+    }
   } catch (e) {
     message(e.message);
   }
@@ -413,6 +586,9 @@ $("#hold").onclick = () =>
     send(held ? "on" : "off");
   });
 $("#stop").onclick = () => {
+  space = false;
+  releaseMomentary();
+  playPending = false;
   stopAudition();
   clearTimeout(timer);
   held = false;
@@ -447,6 +623,7 @@ document.addEventListener("keyup", (e) => {
   }
 });
 window.addEventListener("blur", () => {
+  releaseMomentary();
   space = false;
   if (!held && !auditioning) send("off");
 });
@@ -465,6 +642,7 @@ for (const id of ["a", "b"])
 $("#store").onclick = () => {
   const other = active === "a" ? "b" : "a";
   slots[other] = structuredClone(config);
+  refreshComparison();
   $("#slot-status").textContent =
     `Current sound stored in ${other.toUpperCase()}. Change this sound, then switch to compare.`;
 };
@@ -510,6 +688,7 @@ $("#file").onchange = async (e) => {
 };
 $("#pitch-lock").onchange = resetLock;
 refresh();
+refreshComparison();
 document.querySelector('[data-preset="pure"]').classList.add("selected");
 const time = new Float32Array(8192),
   freq = new Float32Array(4096);
